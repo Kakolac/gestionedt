@@ -3,22 +3,22 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
-  CreerContenuPedagogiqueModal,
+  CreerFormationModal,
   type MatiereOptionCourte,
-} from "@/components/administration/CreerContenuPedagogiqueModal";
-import type { ContenuPedagogiqueRow } from "@/components/administration/ModifierContenuPedagogiqueModal";
-import { ModifierContenuPedagogiqueModal } from "@/components/administration/ModifierContenuPedagogiqueModal";
-import type { ProfesseurOption } from "@/components/administration/ContenuPedagogiqueProfesseursChecklist";
-import { SupprimerContenuPedagogiqueConfirmModal } from "@/components/administration/SupprimerContenuPedagogiqueConfirmModal";
+} from "@/components/administration/CreerFormationModal";
+import type { FormationRow } from "@/components/administration/ModifierFormationModal";
+import { ModifierFormationModal } from "@/components/administration/ModifierFormationModal";
+import type { ProfesseurOption } from "@/components/administration/FormationProfesseursChecklist";
+import { SupprimerFormationConfirmModal } from "@/components/administration/SupprimerFormationConfirmModal";
 
 type Props = {
-  rows: ContenuPedagogiqueRow[];
+  rows: FormationRow[];
   matiereDisponiblesPourCreation: MatiereOptionCourte[];
   toutesLesMatieres: MatiereOptionCourte[];
   professeurOptions: ProfesseurOption[];
 };
 
-function matiereIdsUtilisesAilleurs(rows: ContenuPedagogiqueRow[], excludeId: string | null): string[] {
+function matiereIdsUtilisesAilleurs(rows: FormationRow[], excludeId: string | null): string[] {
   const s = new Set<string>();
   for (const r of rows) {
     if (excludeId != null && r.id === excludeId) {
@@ -32,7 +32,7 @@ function matiereIdsUtilisesAilleurs(rows: ContenuPedagogiqueRow[], excludeId: st
   return [...s];
 }
 
-export function GestionContenuPedagogiquePanel({
+export function GestionFormationPanel({
   rows,
   matiereDisponiblesPourCreation,
   toutesLesMatieres,
@@ -41,10 +41,10 @@ export function GestionContenuPedagogiquePanel({
   const router = useRouter();
   const [createKey, setCreateKey] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
-  const [editRow, setEditRow] = useState<ContenuPedagogiqueRow | null>(null);
+  const [editRow, setEditRow] = useState<FormationRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{
     id: string;
-    contenuLabel: string;
+    formationLabel: string;
   } | null>(null);
 
   const matiereIdsReserveesAilleurs = useMemo(() => {
@@ -65,7 +65,7 @@ export function GestionContenuPedagogiquePanel({
             setCreateOpen(true);
           }}
         >
-          Nouveau contenu
+          Nouvelle formation
         </button>
       </div>
 
@@ -93,7 +93,7 @@ export function GestionContenuPedagogiquePanel({
             {rows.length === 0 ? (
               <tr>
                 <td className="px-4 py-6 text-slate-500" colSpan={6}>
-                  Aucun contenu. Utilisez « Nouveau contenu » pour définir un
+                  Aucune formation. Utilisez « Nouvelle formation » pour définir un
                   regroupement (nom, description, matières avec heures prévues par matière,
                   intervenants).
                 </td>
@@ -150,7 +150,7 @@ export function GestionContenuPedagogiquePanel({
                         onClick={() =>
                           setDeleteTarget({
                             id: row.id,
-                            contenuLabel: row.nom,
+                            formationLabel: row.nom,
                           })
                         }
                       >
@@ -165,7 +165,7 @@ export function GestionContenuPedagogiquePanel({
         </table>
       </div>
 
-      <CreerContenuPedagogiqueModal
+      <CreerFormationModal
         key={createKey}
         open={createOpen}
         onClose={() => setCreateOpen(false)}
@@ -178,7 +178,7 @@ export function GestionContenuPedagogiquePanel({
         professeurOptions={professeurOptions}
       />
 
-      <ModifierContenuPedagogiqueModal
+      <ModifierFormationModal
         key={editRow ? `modifier-${editRow.id}` : "modifier-closed"}
         open={editRow != null}
         onClose={() => setEditRow(null)}
@@ -188,7 +188,7 @@ export function GestionContenuPedagogiquePanel({
         professeurOptions={professeurOptions}
       />
 
-      <SupprimerContenuPedagogiqueConfirmModal
+      <SupprimerFormationConfirmModal
         key={
           deleteTarget
             ? `supprimer-${deleteTarget.id}`
@@ -196,8 +196,8 @@ export function GestionContenuPedagogiquePanel({
         }
         open={deleteTarget != null}
         onClose={() => setDeleteTarget(null)}
-        contenuPedagogiqueId={deleteTarget?.id ?? null}
-        contenuLabel={deleteTarget?.contenuLabel ?? null}
+        formationId={deleteTarget?.id ?? null}
+        formationLabel={deleteTarget?.formationLabel ?? null}
       />
     </div>
   );

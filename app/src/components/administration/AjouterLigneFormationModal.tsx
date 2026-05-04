@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
-import type { MatiereOptionCourte } from "@/components/administration/CreerContenuPedagogiqueModal";
-import type { ProfesseurOption } from "@/components/administration/ContenuPedagogiqueProfesseursChecklist";
-import { ContenuPedagogiqueProfesseursChecklist } from "@/components/administration/ContenuPedagogiqueProfesseursChecklist";
+import type { MatiereOptionCourte } from "@/components/administration/CreerFormationModal";
+import type { ProfesseurOption } from "@/components/administration/FormationProfesseursChecklist";
+import { FormationProfesseursChecklist } from "@/components/administration/FormationProfesseursChecklist";
 
-export type AjouterLigneContenuResult =
+export type AjouterLigneFormationResult =
   | {
       mode: "existing";
       matiereId: string;
@@ -27,13 +27,13 @@ type Props = {
   onClose: () => void;
   matieresSansFiche: MatiereOptionCourte[];
   professeurOptions: ProfesseurOption[];
-  onAjouter: (r: AjouterLigneContenuResult) => void;
+  onAjouter: (r: AjouterLigneFormationResult) => void;
   matiereIdsDejaDansDraft: readonly string[];
 };
 
 const CHECKBOX_PROF = "professeurIdsDraftLigne";
 
-export function AjouterLigneContenuPedagogiqueModal({
+export function AjouterLigneFormationModal({
   open,
   onClose,
   matieresSansFiche,
@@ -119,15 +119,15 @@ export function AjouterLigneContenuPedagogiqueModal({
       <div
         role="dialog"
         aria-modal="true"
-        aria-labelledby="ajouter-ligne-contenu-titre"
+        aria-labelledby="ajouter-ligne-formation-titre"
         className="max-h-[90vh] w-full max-w-[min(94vw,32rem)] overflow-y-auto rounded-2xl border border-white/70 bg-white p-[min(5vw,1.25rem)] shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <h3
-          id="ajouter-ligne-contenu-titre"
+          id="ajouter-ligne-formation-titre"
           className="text-base font-semibold text-slate-900"
         >
-          Ajouter une matière au contenu
+          Ajouter une matière à la formation
         </h3>
         <p className="mt-1 text-xs text-slate-500">
           Comme précédemment : matière déjà créée ou nouvelle matière pour cette ligne,
@@ -170,7 +170,7 @@ export function AjouterLigneContenuPedagogiqueModal({
           >
             <span className="block font-semibold">Nouvelle matière</span>
             <span className="mt-1 block text-xs leading-snug text-slate-600">
-              Elle sera créée à l&apos;enregistrement du contenu avec les autres lignes.
+              Elle sera créée à l&apos;enregistrement de la formation avec les autres lignes.
             </span>
           </button>
         </div>
@@ -248,7 +248,7 @@ export function AjouterLigneContenuPedagogiqueModal({
           </p>
         ) : (
           <div ref={profRootRef} className="mt-[2vh]">
-            <ContenuPedagogiqueProfesseursChecklist
+            <FormationProfesseursChecklist
               key={`${creationMode}-${selectedMatiereId}-${nouveauNom.slice(0, 12)}-${checklistBump}`}
               checkboxName={CHECKBOX_PROF}
               options={filteredProfesseurOptions}

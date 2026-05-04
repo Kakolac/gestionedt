@@ -1,6 +1,9 @@
 import mongoose, { Schema, model, models, type InferSchemaType } from "mongoose";
 
-const ContenuPedagogiqueLigneSchema = new Schema(
+/** Garde le nom de collection MongoDB existant (`contenupedagogiques`). */
+export const FORMATION_MONGODB_COLLECTION = "contenupedagogiques" as const;
+
+const FormationLigneSchema = new Schema(
   {
     matiereId: { type: Schema.Types.ObjectId, ref: "Matiere", required: true },
     professeurIds: {
@@ -18,17 +21,17 @@ const ContenuPedagogiqueLigneSchema = new Schema(
 );
 
 /**
- * Contenu pédagogique : nom, description du bloc ; **lignes** (chaque ligne = une
+ * Formation : nom, description du bloc ; **lignes** (chaque ligne = une
  * matière + les professeurs associés + **heures prévues** pour cette matière dans le
  * bloc). Une matière ne peut appartenir qu’à un seul document (index unique multi-clé
  * sur les `matiereId` des lignes).
  */
-const ContenuPedagogiqueSchema = new Schema(
+const FormationSchema = new Schema(
   {
     nom: { type: String, required: true, trim: true, maxlength: 200 },
     description: { type: String, default: "", trim: true, maxlength: 2000 },
     lignes: {
-      type: [ContenuPedagogiqueLigneSchema],
+      type: [FormationLigneSchema],
       required: true,
       validate: {
         validator: (v: unknown) => Array.isArray(v) && v.length >= 1,
@@ -41,14 +44,12 @@ const ContenuPedagogiqueSchema = new Schema(
   { timestamps: true }
 );
 
-ContenuPedagogiqueSchema.index({ "lignes.matiereId": 1 }, { unique: true });
+FormationSchema.index({ "lignes.matiereId": 1 }, { unique: true });
 
-export type ContenuPedagogiqueDoc = InferSchemaType<
-  typeof ContenuPedagogiqueSchema
-> & {
+export type FormationDoc = InferSchemaType<typeof FormationSchema> & {
   _id: mongoose.Types.ObjectId;
 };
 
-export const ContenuPedagogique =
-  models.ContenuPedagogique ??
-  model("ContenuPedagogique", ContenuPedagogiqueSchema);
+export const Formation =
+  models.Formation ??
+  model("Formation", FormationSchema, FORMATION_MONGODB_COLLECTION);

@@ -4,7 +4,7 @@ import {
   PERMISSION_ADMIN_ROLES_METIER,
   PERMISSION_ADMIN_UTILISATEURS,
   PERMISSION_CREATION_CLASSE,
-  PERMISSION_CREATION_CONTENU_PEDAGOGIQUE,
+  PERMISSION_CREATION_FORMATION,
   PERMISSION_CREATION_MATIERE,
   PERMISSION_CREATION_PROFESSEUR,
   PERMISSION_CREATION_SALLE,
@@ -71,10 +71,16 @@ export const NAV_TILE_DEFINITIONS: readonly NavTileDefinition[] = [
     permissionKeys: [PERMISSION_CREATION_MATIERE],
   },
   {
-    id: "hub.creation_contenu_pedagogique",
-    label: "Contenu pédagogique",
+    id: "hub.creation_formation",
+    label: "Formation",
     scope: "hub",
-    permissionKeys: [PERMISSION_CREATION_CONTENU_PEDAGOGIQUE],
+    permissionKeys: [PERMISSION_CREATION_FORMATION],
+  },
+  {
+    id: "hub.export_formation_json",
+    label: "Export JSON formations",
+    scope: "hub",
+    permissionKeys: [PERMISSION_CREATION_FORMATION],
   },
   {
     id: "hub.creation_salle",

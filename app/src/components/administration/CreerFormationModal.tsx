@@ -2,14 +2,14 @@
 
 import { useActionState, useEffect, useMemo, useState } from "react";
 import {
-  createContenuPedagogiqueAction,
-  type ContenuPedagogiqueActionState,
-} from "@/app/administration/_actions/contenuPedagogique";
+  createFormationAction,
+  type FormationActionState,
+} from "@/app/administration/_actions/formation";
 import {
-  AjouterLigneContenuPedagogiqueModal,
-  type AjouterLigneContenuResult,
-} from "@/components/administration/AjouterLigneContenuPedagogiqueModal";
-import type { ProfesseurOption } from "@/components/administration/ContenuPedagogiqueProfesseursChecklist";
+  AjouterLigneFormationModal,
+  type AjouterLigneFormationResult,
+} from "@/components/administration/AjouterLigneFormationModal";
+import type { ProfesseurOption } from "@/components/administration/FormationProfesseursChecklist";
 
 export type MatiereOptionCourte = { id: string; nom: string };
 
@@ -39,7 +39,7 @@ type Props = {
   professeurOptions: ProfesseurOption[];
 };
 
-const initial: ContenuPedagogiqueActionState | undefined = undefined;
+const initial: FormationActionState | undefined = undefined;
 
 function draftVersPayloadJson(drafts: DraftLigne[]): string {
   const payload = drafts.map((d) => {
@@ -60,7 +60,7 @@ function draftVersPayloadJson(drafts: DraftLigne[]): string {
   return JSON.stringify(payload);
 }
 
-function resultVersDraft(r: AjouterLigneContenuResult, key: string): DraftLigne {
+function resultVersDraft(r: AjouterLigneFormationResult, key: string): DraftLigne {
   if (r.mode === "existing") {
     return {
       clientKey: key,
@@ -81,7 +81,7 @@ function resultVersDraft(r: AjouterLigneContenuResult, key: string): DraftLigne 
   };
 }
 
-export function CreerContenuPedagogiqueModal({
+export function CreerFormationModal({
   open,
   onClose,
   onSuccess,
@@ -89,7 +89,7 @@ export function CreerContenuPedagogiqueModal({
   professeurOptions,
 }: Props) {
   const [state, formAction, pending] = useActionState(
-    createContenuPedagogiqueAction,
+    createFormationAction,
     initial
   );
 
@@ -147,15 +147,15 @@ export function CreerContenuPedagogiqueModal({
         <div
           role="dialog"
           aria-modal="true"
-          aria-labelledby="creer-contenu-pedagogique-titre"
+          aria-labelledby="creer-formation-titre"
           className="max-h-[92vh] w-full max-w-[min(94vw,36rem)] overflow-y-auto rounded-2xl border border-white/60 bg-white p-[min(5vw,1.25rem)] shadow-xl"
           onMouseDown={(e) => e.stopPropagation()}
         >
           <h2
-            id="creer-contenu-pedagogique-titre"
+            id="creer-formation-titre"
             className="text-lg font-semibold text-slate-900"
           >
-            Nouveau contenu pédagogique
+            Nouvelle formation
           </h2>
           <p className="mt-1 max-w-[90vw] text-xs text-slate-500">
             Renseignez le bloc,             plus plusieurs matières via la modale (existante ou nouvelle + professeurs +
@@ -169,9 +169,9 @@ export function CreerContenuPedagogiqueModal({
             <input type="hidden" name="lignesJson" value={lignesJson} />
 
             <label className="flex flex-col gap-1 text-sm">
-              <span className="font-medium text-slate-800">Nom du contenu</span>
+              <span className="font-medium text-slate-800">Nom de la formation</span>
               <input
-                name="nomContenu"
+                name="nomFormation"
                 type="text"
                 required
                 maxLength={200}
@@ -183,7 +183,7 @@ export function CreerContenuPedagogiqueModal({
             <label className="flex flex-col gap-1 text-sm">
               <span className="font-medium text-slate-800">Description</span>
               <textarea
-                name="descriptionContenu"
+                name="descriptionFormation"
                 rows={3}
                 maxLength={2000}
                 disabled={pending}
@@ -193,7 +193,7 @@ export function CreerContenuPedagogiqueModal({
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-[min(4vw,0.875rem)]">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-medium text-slate-800">Matières du contenu</p>
+                <p className="text-sm font-medium text-slate-800">Matières de la formation</p>
                 <button
                   type="button"
                   disabled={pending}
@@ -295,7 +295,7 @@ export function CreerContenuPedagogiqueModal({
                 disabled={pending || lignesDraft.length === 0}
                 className="rounded-xl bg-gradient-to-r from-indigo-600 to-fuchsia-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:from-indigo-500 hover:to-fuchsia-500 disabled:opacity-60"
               >
-                {pending ? "Enregistrement…" : "Créer le contenu"}
+                {pending ? "Enregistrement…" : "Créer la formation"}
               </button>
               <button
                 type="button"
@@ -310,7 +310,7 @@ export function CreerContenuPedagogiqueModal({
         </div>
       </div>
 
-      <AjouterLigneContenuPedagogiqueModal
+      <AjouterLigneFormationModal
         key={addModalKey}
         open={addOpen}
         onClose={() => setAddOpen(false)}

@@ -1,5 +1,5 @@
 /**
- * Migre les documents ContenuPedagogique vers le schéma **`lignes`** (chaque ligne :
+ * Migre les documents **formation** (collection `contenupedagogiques`) vers le schéma **`lignes`** (chaque ligne :
  * matiereId + professeurIds pour ce bloc).
  *
  * À partir de données :
@@ -17,7 +17,7 @@ loadEnv();
 
 import mongoose from "mongoose";
 import { connectDB } from "../../src/lib/mongodb.js";
-import { ContenuPedagogique } from "../../src/lib/models/ContenuPedagogique.js";
+import { Formation } from "../../src/lib/models/Formation.js";
 
 function toOidList(raw: unknown): mongoose.Types.ObjectId[] {
   if (!Array.isArray(raw)) {
@@ -59,7 +59,7 @@ function lignesDejaValides(raw: unknown): boolean {
 
 async function main(): Promise<void> {
   await connectDB();
-  const col = ContenuPedagogique.collection;
+  const col = Formation.collection;
 
   console.info(`Collection Mongoose : ${col.collectionName}`);
 
@@ -67,7 +67,7 @@ async function main(): Promise<void> {
   let alreadyOk = 0;
   let skipped = 0;
 
-  const cursor = ContenuPedagogique.find({}).cursor();
+  const cursor = Formation.find({}).cursor();
 
   for await (const doc of cursor) {
     const d = doc as mongoose.Document &

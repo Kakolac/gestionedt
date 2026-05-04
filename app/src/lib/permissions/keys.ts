@@ -9,8 +9,7 @@ export const ROLE_CREATION_CLASSE_SLUG = "création_classe" as const;
 export const ROLE_CREATION_ELEVE_SLUG = "création_éléve" as const;
 export const ROLE_CREATION_PROFESSEUR_SLUG = "création_professeur" as const;
 export const ROLE_CREATION_MATIERE_SLUG = "création_matière" as const;
-export const ROLE_CREATION_CONTENU_PEDAGOGIQUE_SLUG =
-  "création_contenu_pédagogique" as const;
+export const ROLE_CREATION_FORMATION_SLUG = "création_formation" as const;
 export const ROLE_CREATION_SALLE_SLUG = "création_salle" as const;
 
 /** Slugs attribués au compte init admin : cumul de tous les rôles applicatifs (seed). */
@@ -22,7 +21,7 @@ export const ALL_ADMIN_ACCOUNT_ROLE_SLUGS = [
   ROLE_CREATION_ELEVE_SLUG,
   ROLE_CREATION_PROFESSEUR_SLUG,
   ROLE_CREATION_MATIERE_SLUG,
-  ROLE_CREATION_CONTENU_PEDAGOGIQUE_SLUG,
+  ROLE_CREATION_FORMATION_SLUG,
   ROLE_CREATION_SALLE_SLUG,
 ] as const;
 
@@ -49,8 +48,8 @@ export const PERMISSION_CREATION_PROFESSEUR =
   "feature.creation.professeur" as const;
 export const PERMISSION_CREATION_MATIERE = "feature.creation.matiere" as const;
 
-export const PERMISSION_CREATION_CONTENU_PEDAGOGIQUE =
-  "feature.creation.contenu_pedagogique" as const;
+export const PERMISSION_CREATION_FORMATION =
+  "feature.creation.formation" as const;
 export const PERMISSION_CREATION_SALLE = "feature.creation.salle" as const;
 
 /** Hub /administration et tuile correspondante sur /accueil. */
@@ -78,7 +77,7 @@ export const ADMIN_SEGMENT_PERMISSIONS = [
   PERMISSION_CREATION_CLASSE,
   PERMISSION_CREATION_PROFESSEUR,
   PERMISSION_CREATION_MATIERE,
-  PERMISSION_CREATION_CONTENU_PEDAGOGIQUE,
+  PERMISSION_CREATION_FORMATION,
   PERMISSION_CREATION_SALLE,
 ] as const;
 
@@ -126,11 +125,11 @@ export const ROUTE_MATRIX_ROWS = [
     scopeNote: "Rôle métier création_matière ; tuile hub Administration.",
   },
   {
-    permissionKey: PERMISSION_CREATION_CONTENU_PEDAGOGIQUE,
-    routeLabel: "Création de contenu pédagogique",
-    routePath: "/administration/creation-contenu-pedagogique",
+    permissionKey: PERMISSION_CREATION_FORMATION,
+    routeLabel: "Création de formation",
+    routePath: "/administration/creation-formation",
     scopeNote:
-      "Rôle création_contenu_pédagogique ; fiches matière + professeurs + heures.",
+      "Rôle création_formation ; fiches matière + professeurs + heures.",
   },
   {
     permissionKey: PERMISSION_CREATION_SALLE,

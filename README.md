@@ -6,6 +6,7 @@ Planification et organisation pour enseignants (AdAgile).
 
 Le code de l’application se trouve dans le dossier **`app/`** (App Router, TypeScript).
 
+- **Carte du projet (contexte agent / dev)** : [docs/contexte-projet-adagile.md](docs/contexte-projet-adagile.md)
 - Démarrage et connexion : [docs/connexion-et-demarrage.md](docs/connexion-et-demarrage.md)
 - Auth / rôles (dev) : [docs/authentification-et-roles.md](docs/authentification-et-roles.md)
 - Patron portable pour autres projets : [docs/boilerplate-contexte-connexion.md](docs/boilerplate-contexte-connexion.md)

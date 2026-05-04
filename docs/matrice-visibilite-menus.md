@@ -10,7 +10,7 @@ Sans cette étape, la tuile peut exister dans l’UI via **`feature.*`** seuls p
 
 Les **colonnes** de la matrice restent **dynamiques** : ce sont les documents **`MetierRole`** en base.
 
-Exemple d’identifiants stables `id` côté hub (registre `NAV_TILE_DEFINITIONS`) : `hub.creation_matiere`, `hub.creation_salle`, etc. — la liste à jour est dans [`app/src/lib/menuVisibility/tiles.ts`](../app/src/lib/menuVisibility/tiles.ts).
+Exemple d’identifiants stables `id` côté hub (registre `NAV_TILE_DEFINITIONS`) : `hub.creation_matiere`, `hub.creation_salle`, `hub.export_formation_json` (export brut des formations depuis l’Administration), etc. — la liste à jour est dans [`app/src/lib/menuVisibility/tiles.ts`](../app/src/lib/menuVisibility/tiles.ts).
 
 ### Checklist développeur — nouvelle tuile / lien pilotable par la matrice
 

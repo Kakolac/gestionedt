@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { liveSessionHasAnyPermission } from "@/lib/authz";
 import { CreerClasseHubTile } from "@/components/administration/CreerClasseHubTile";
-import { CreerContenuPedagogiqueHubTile } from "@/components/administration/CreerContenuPedagogiqueHubTile";
+import { CreerFormationHubTile } from "@/components/administration/CreerFormationHubTile";
+import { ExportFormationJsonHubTile } from "@/components/administration/ExportFormationJsonHubTile";
 import { CreerMatiereHubTile } from "@/components/administration/CreerMatiereHubTile";
 import { CreerSalleHubTile } from "@/components/administration/CreerSalleHubTile";
 import { CreerProfesseurHubTile } from "@/components/administration/CreerProfesseurHubTile";
@@ -29,7 +30,8 @@ export default async function AdministrationHubPage() {
     showCreationClasseTile,
     showCreationProfesseurTile,
     showCreationMatiereTile,
-    showContenuPedagogiqueTile,
+    showFormationTile,
+    showExportFormationJsonTile,
     showCreationSalleTile,
     canMatrice,
   ] = await Promise.all([
@@ -39,7 +41,8 @@ export default async function AdministrationHubPage() {
     resolveNavTileVisible(session, "hub.creation_classe"),
     resolveNavTileVisible(session, "hub.creation_professeur"),
     resolveNavTileVisible(session, "hub.creation_matiere"),
-    resolveNavTileVisible(session, "hub.creation_contenu_pedagogique"),
+    resolveNavTileVisible(session, "hub.creation_formation"),
+    resolveNavTileVisible(session, "hub.export_formation_json"),
     resolveNavTileVisible(session, "hub.creation_salle"),
     liveSessionHasAnyPermission(session, [PERMISSION_ADMIN_MATRICE_MENU]),
   ]);
@@ -50,7 +53,8 @@ export default async function AdministrationHubPage() {
     showCreationClasseTile ||
     showCreationProfesseurTile ||
     showCreationMatiereTile ||
-    showContenuPedagogiqueTile ||
+    showFormationTile ||
+    showExportFormationJsonTile ||
     showCreationSalleTile ||
     canMatrice;
 
@@ -100,9 +104,14 @@ export default async function AdministrationHubPage() {
               <CreerMatiereHubTile />
             </li>
           ) : null}
-          {showContenuPedagogiqueTile ? (
+          {showFormationTile ? (
             <li className="min-w-[240px] flex-1 basis-64 max-w-sm">
-              <CreerContenuPedagogiqueHubTile />
+              <CreerFormationHubTile />
+            </li>
+          ) : null}
+          {showExportFormationJsonTile ? (
+            <li className="min-w-[240px] flex-1 basis-64 max-w-sm">
+              <ExportFormationJsonHubTile />
             </li>
           ) : null}
           {showCreationSalleTile ? (

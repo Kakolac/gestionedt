@@ -4,10 +4,10 @@ import mongoose from "mongoose";
 import { auth } from "@/lib/auth";
 import { liveSessionHasAnyPermission } from "@/lib/authz";
 import { connectDB } from "@/lib/mongodb";
-import { ContenuPedagogique } from "@/lib/models/ContenuPedagogique";
+import { Formation } from "@/lib/models/Formation";
 import { Matiere } from "@/lib/models/Matiere";
 import { Professeur } from "@/lib/models/Professeur";
-import { PERMISSION_CREATION_CONTENU_PEDAGOGIQUE } from "@/lib/permissions/keys";
+import { PERMISSION_CREATION_FORMATION } from "@/lib/permissions/keys";
 import { slugifyMetierLabel } from "@/lib/slugifyMetier";
 import { revalidatePath } from "next/cache";
 
@@ -15,15 +15,15 @@ function isDuplicateKeyError(e: unknown): boolean {
   return typeof e === "object" && e != null && (e as { code?: number }).code === 11000;
 }
 
-export type ContenuPedagogiqueActionState =
+export type FormationActionState =
   | { ok: true; message?: string }
   | { ok: false; error: string };
 
-const CONTENU_PATH = "/administration/creation-contenu-pedagogique";
+const FORMATION_PATH = "/administration/creation-formation";
 const MATIERE_PATH = "/administration/creation-matiere";
 
-const NOM_CONTENU_MAX = 200;
-const DESC_CONTENU_MAX = 2000;
+const NOM_FORMATION_MAX = 200;
+const DESC_FORMATION_MAX = 2000;
 const NOM_MAT_MAX = 200;
 const DESC_MAT_MAX = 2000;
 const HEURES_MIN = 0;
@@ -32,13 +32,13 @@ const HEURES_MAX = 50000;
 const MAX_LIGNES = 120;
 const MAX_JSON_CHARS = 400_000;
 
-async function ensureContenuPermission(): Promise<ContenuPedagogiqueActionState | null> {
+async function ensureFormationPermission(): Promise<FormationActionState | null> {
   const session = await auth();
   if (!session?.user?.id) {
     return { ok: false, error: "Non connecté." };
   }
   const allowed = await liveSessionHasAnyPermission(session, [
-    PERMISSION_CREATION_CONTENU_PEDAGOGIQUE,
+    PERMISSION_CREATION_FORMATION,
   ]);
   if (!allowed) {
     return { ok: false, error: "Permission refusée." };
@@ -48,7 +48,7 @@ async function ensureContenuPermission(): Promise<ContenuPedagogiqueActionState 
 
 async function assertProfesseursExist(
   ids: string[]
-): Promise<ContenuPedagogiqueActionState | null> {
+): Promise<FormationActionState | null> {
   const ordered = [
     ...new Set(ids.map((id) => id.trim()).filter((id) => mongoose.isValidObjectId(id))),
   ];
@@ -69,7 +69,7 @@ async function assertProfesseursExist(
 async function assertProfesseursOntMatiere(
   professeurIds: string[],
   matiereId: mongoose.Types.ObjectId
-): Promise<Extract<ContenuPedagogiqueActionState, { ok: false }> | null> {
+): Promise<Extract<FormationActionState, { ok: false }> | null> {
   if (professeurIds.length === 0) return null;
   await connectDB();
   const oidList = professeurIds.map((id) => new mongoose.Types.ObjectId(id));
@@ -87,24 +87,24 @@ async function assertProfesseursOntMatiere(
   return null;
 }
 
-async function assertMatiereIdsPasDejaDansAutreContenu(
+async function assertMatiereIdsPasDejaDansAutreFormation(
   matiereOids: mongoose.Types.ObjectId[],
-  excludeContenuId?: string
-): Promise<ContenuPedagogiqueActionState | null> {
+  excludeFormationId?: string
+): Promise<FormationActionState | null> {
   if (matiereOids.length === 0) return null;
   await connectDB();
   const filter: Record<string, unknown> = {
     "lignes.matiereId": { $in: matiereOids },
   };
-  if (excludeContenuId && mongoose.isValidObjectId(excludeContenuId.trim())) {
-    filter._id = { $ne: new mongoose.Types.ObjectId(excludeContenuId.trim()) };
+  if (excludeFormationId && mongoose.isValidObjectId(excludeFormationId.trim())) {
+    filter._id = { $ne: new mongoose.Types.ObjectId(excludeFormationId.trim()) };
   }
-  const conflit = await ContenuPedagogique.findOne(filter).select("_id").lean();
+  const conflit = await Formation.findOne(filter).select("_id").lean();
   if (conflit != null) {
     return {
       ok: false,
       error:
-        "Une ou plusieurs matières sont déjà rattachées à un autre contenu pédagogique.",
+        "Une ou plusieurs matières sont déjà rattachées à une autre formation.",
     };
   }
   return null;
@@ -161,28 +161,28 @@ function parseHeuresPrevuesPourLigne(
 
 function sommeHeuresLignes(
   lignes: { nombreHeuresPrevues: number }[]
-): number | ContenuPedagogiqueActionState {
+): number | FormationActionState {
   const sum = lignes.reduce((s, l) => s + l.nombreHeuresPrevues, 0);
   if (sum > HEURES_MAX) {
     return {
       ok: false,
-      error: `Le total d’heures du contenu ne peut pas dépasser ${HEURES_MAX}.`,
+      error: `Le total d’heures de la formation ne peut pas dépasser ${HEURES_MAX}.`,
     };
   }
   return sum;
 }
 
-function parseContenuNomDesc(formData: FormData):
+function parseFormationNomDesc(formData: FormData):
   | { ok: true; nom: string; description: string }
   | { ok: false; error: string } {
-  const nomRaw = formData.get("nomContenu");
+  const nomRaw = formData.get("nomFormation");
   if (typeof nomRaw !== "string" || !nomRaw.trim()) {
-    return { ok: false, error: "Indiquez le nom du contenu pédagogique." };
+    return { ok: false, error: "Indiquez le nom de la formation." };
   }
-  const nom = nomRaw.trim().slice(0, NOM_CONTENU_MAX);
-  const descRaw = formData.get("descriptionContenu");
+  const nom = nomRaw.trim().slice(0, NOM_FORMATION_MAX);
+  const descRaw = formData.get("descriptionFormation");
   const description =
-    typeof descRaw === "string" ? descRaw.trim().slice(0, DESC_CONTENU_MAX) : "";
+    typeof descRaw === "string" ? descRaw.trim().slice(0, DESC_FORMATION_MAX) : "";
   return { ok: true, nom, description };
 }
 
@@ -237,7 +237,7 @@ function parseLignesJsonFromForm(formData: FormData):
     return { ok: false, error: "Ajoutez au moins une ligne (matière + professeurs)." };
   }
   if (parsed.length > MAX_LIGNES) {
-    return { ok: false, error: "Trop de lignes dans le contenu." };
+    return { ok: false, error: "Trop de lignes dans la formation." };
   }
 
   const lignesResult: LigneParsée[] = [];
@@ -379,14 +379,14 @@ async function resoudreLignesVersMongoose(
   return { ok: true, mongooseLignes, aCreeMatiere };
 }
 
-export async function createContenuPedagogiqueAction(
-  _prev: ContenuPedagogiqueActionState | undefined,
+export async function createFormationAction(
+  _prev: FormationActionState | undefined,
   formData: FormData
-): Promise<ContenuPedagogiqueActionState> {
-  const denied = await ensureContenuPermission();
+): Promise<FormationActionState> {
+  const denied = await ensureFormationPermission();
   if (denied) return denied;
 
-  const meta = parseContenuNomDesc(formData);
+  const meta = parseFormationNomDesc(formData);
   if (!meta.ok) return meta;
   const { nom, description } = meta;
 
@@ -408,7 +408,7 @@ export async function createContenuPedagogiqueAction(
   if (typeof totalHeures !== "number") return totalHeures;
 
   const allMid = mongooseLignes.map((x) => x.matiereId);
-  const conflitExterne = await assertMatiereIdsPasDejaDansAutreContenu(allMid, undefined);
+  const conflitExterne = await assertMatiereIdsPasDejaDansAutreFormation(allMid, undefined);
   if (conflitExterne) return conflitExterne;
 
   if (aCreeMatiere) {
@@ -416,7 +416,7 @@ export async function createContenuPedagogiqueAction(
   }
 
   try {
-    await ContenuPedagogique.create({
+    await Formation.create({
       nom,
       description,
       lignes: mongooseLignes,
@@ -427,41 +427,41 @@ export async function createContenuPedagogiqueAction(
       return {
         ok: false,
         error:
-          "Impossible d’enregistrer : une matière est déjà dans un autre contenu.",
+          "Impossible d’enregistrer : une matière est déjà dans une autre formation.",
       };
     }
     throw e;
   }
 
-  revalidatePath(CONTENU_PATH);
-  return { ok: true, message: "Contenu pédagogique enregistré." };
+  revalidatePath(FORMATION_PATH);
+  return { ok: true, message: "Formation enregistrée." };
 }
 
-export async function updateContenuPedagogiqueAction(
-  _prev: ContenuPedagogiqueActionState | undefined,
+export async function updateFormationAction(
+  _prev: FormationActionState | undefined,
   formData: FormData
-): Promise<ContenuPedagogiqueActionState> {
-  const denied = await ensureContenuPermission();
+): Promise<FormationActionState> {
+  const denied = await ensureFormationPermission();
   if (denied) return denied;
 
-  const meta = parseContenuNomDesc(formData);
+  const meta = parseFormationNomDesc(formData);
   if (!meta.ok) return meta;
   const { nom, description } = meta;
 
-  const idRaw = formData.get("contenuPedagogiqueId");
+  const idRaw = formData.get("formationId");
   if (
     typeof idRaw !== "string" ||
     !mongoose.isValidObjectId(idRaw.trim())
   ) {
     return { ok: false, error: "Identifiant de fiche invalide." };
   }
-  const cid = idRaw.trim();
+  const fid = idRaw.trim();
 
   const parsedLignes = parseLignesJsonFromForm(formData);
   if (!parsedLignes.ok) return parsedLignes;
 
   await connectDB();
-  const doc = await ContenuPedagogique.findById(cid);
+  const doc = await Formation.findById(fid);
   if (!doc) return { ok: false, error: "Fiche introuvable." };
 
   const lignesParsées = parsedLignes.lignes;
@@ -477,7 +477,7 @@ export async function updateContenuPedagogiqueAction(
   if (typeof totalHeures !== "number") return totalHeures;
 
   const allMid = mongooseLignes.map((x) => x.matiereId);
-  const conflitExterne = await assertMatiereIdsPasDejaDansAutreContenu(allMid, cid);
+  const conflitExterne = await assertMatiereIdsPasDejaDansAutreFormation(allMid, fid);
   if (conflitExterne) return conflitExterne;
 
   if (aCreeMatiere) {
@@ -496,43 +496,43 @@ export async function updateContenuPedagogiqueAction(
       return {
         ok: false,
         error:
-          "Conflit : une matière est déjà utilisée dans un autre contenu pédagogique.",
+          "Conflit : une matière est déjà utilisée dans une autre formation.",
       };
     }
     throw e;
   }
 
-  revalidatePath(CONTENU_PATH);
+  revalidatePath(FORMATION_PATH);
   return { ok: true, message: "Fiche mise à jour." };
 }
 
-export async function deleteContenuPedagogiqueAction(
-  contenuPedagogiqueId: string
-): Promise<ContenuPedagogiqueActionState> {
-  const denied = await ensureContenuPermission();
+export async function deleteFormationAction(
+  formationId: string
+): Promise<FormationActionState> {
+  const denied = await ensureFormationPermission();
   if (denied) return denied;
 
-  if (!mongoose.isValidObjectId(contenuPedagogiqueId)) {
+  if (!mongoose.isValidObjectId(formationId)) {
     return { ok: false, error: "Identifiant invalide." };
   }
 
   await connectDB();
-  const res = await ContenuPedagogique.deleteOne({ _id: contenuPedagogiqueId });
+  const res = await Formation.deleteOne({ _id: formationId });
   if (res.deletedCount === 0) {
     return { ok: false, error: "Fiche introuvable." };
   }
 
-  revalidatePath(CONTENU_PATH);
+  revalidatePath(FORMATION_PATH);
   return { ok: true, message: "Fiche supprimée." };
 }
 
-export async function deleteContenuPedagogiqueFormAction(
-  _prev: ContenuPedagogiqueActionState | undefined,
+export async function deleteFormationFormAction(
+  _prev: FormationActionState | undefined,
   formData: FormData
-): Promise<ContenuPedagogiqueActionState> {
-  const raw = formData.get("contenuPedagogiqueId");
+): Promise<FormationActionState> {
+  const raw = formData.get("formationId");
   if (typeof raw !== "string") {
     return { ok: false, error: "Identifiant manquant." };
   }
-  return deleteContenuPedagogiqueAction(raw);
+  return deleteFormationAction(raw);
 }

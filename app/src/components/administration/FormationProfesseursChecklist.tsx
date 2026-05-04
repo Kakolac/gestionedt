@@ -18,7 +18,7 @@ type Props = {
   checkboxName?: string;
 };
 
-export function ContenuPedagogiqueProfesseursChecklist({
+export function FormationProfesseursChecklist({
   options,
   defaultSelectedIds,
   disabled,

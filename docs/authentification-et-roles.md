@@ -29,7 +29,7 @@ Ce document décrit **l’implémentation concrète** dans ce dépôt. Pour un p
 | [`app/src/app/administration/layout.tsx`](../app/src/app/administration/layout.tsx) | Garde : union `feature.administration.access`, `feature.administration.roles_metier`, `feature.administration.utilisateurs`. |
 | [`app/src/app/administration/_actions/`](../app/src/app/administration/_actions/) | Actions serveur : création `MetierRole`, CRUD `User` (bcrypt, rôles). |
 | [Documentation hub Administration](./administration-hub.md) | Routes `/administration`, permissions, garde-fous. |
-| [`app/scripts/init/`](../app/scripts/init/) | `load-env.ts`, `seed-roles.ts`, `seed-metier-roles.ts`, `migrate-user-role-slugs.ts`, `create-admin.ts`. |
+| [`app/scripts/init/`](../app/scripts/init/) | `load-env.ts`, `seed-roles.ts`, `seed-metier-roles.ts`, `migrate-user-role-slugs.ts`, `migrate-renommage-formation.ts`, `create-admin.ts`. |
 
 ## Plusieurs rôles par utilisateur
 
@@ -63,7 +63,7 @@ Le script [`seed-roles.ts`](../app/scripts/init/seed-roles.ts) crée notamment l
 | `création_éléve` | `feature.creation.eleve` |
 | `création_professeur` | `feature.creation.professeur` |
 | `création_matière` | `feature.creation.matiere` |
-| `création_contenu_pédagogique` | `feature.creation.contenu_pedagogique` |
+| `création_formation` | `feature.creation.formation` |
 | `création_salle` | `feature.creation.salle` |
 
 Le rôle **`admin`** reçoit l’union de **toutes** les clés `ALL_APP_PERMISSION_KEYS` (incluant les permissions du hub Administration après ajout dans [`keys.ts`](../app/src/lib/permissions/keys.ts)). Le rôle **`user`** du seed reçoit **les mêmes clés sauf** `feature.admin.demo` : un compte avec **`roleSlugs` vide** et **`role: "user"`** (défaut du schéma) se voit donc **à peu près** les mêmes droits applicatifs que « utilisateur générique », pas un compte vide de permissions — voir aussi la FAQ dans [matrice-visibilite-menus.md](./matrice-visibilite-menus.md). Le compte **[`init:admin`](../app/scripts/init/create-admin.ts)** fixe `roleSlugs` à **`ALL_ADMIN_ACCOUNT_ROLE_SLUGS`** (cumul des slugs **de base** : `admin`, `user` et ceux du tableau ci-dessus), **`metierRoleSlugs`** à `[]`, et `role` à `admin`. Ainsi l’admin a tous les slugs de base listés explicitement. Pour d’autres comptes : éditer **`users.roleSlugs`**, **`users.metierRoleSlugs`**, ou les deux (mix). Réexécuter `init:admin` met à jour le document pour l’e-mail configuré.

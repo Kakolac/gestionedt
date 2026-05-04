@@ -11,10 +11,11 @@ Ce document décrit le **hub `/administration`**, les permissions associées et 
    - **Création classe** → **`/administration/creation-classe`** (permission **`feature.creation.classe`** ; rôle de base **`création_classe`**)
    - **Création professeur** → **`/administration/creation-professeur`** (référentiel professeurs CRUD ; permission **`feature.creation.professeur`** ; rôle de base **`création_professeur`** — détail [`creation-gestion-professeurs.md`](./creation-gestion-professeurs.md))
    - **Création matière** → **`/administration/creation-matiere`** (référentiel matières CRUD ; permission **`feature.creation.matiere`** ; rôle de base **`création_matière`** — détail flux et modèle : [`creation-gestion-matieres.md`](./creation-gestion-matieres.md))
-   - **Contenu pédagogique** → **`/administration/creation-contenu-pedagogique`** (fiches matière + intervenants + heures ; permission **`feature.creation.contenu_pedagogique`** ; rôle **`création_contenu_pédagogique`** — [`creation-contenu-pedagogique.md`](./creation-contenu-pedagogique.md))
+   - **Formation** → **`/administration/creation-formation`** (regroupement de matières ; **heures prévues par matière** + total du bloc ; intervenants par ligne ; permission **`feature.creation.formation`** ; rôle **`création_formation`** — détail : [`creation-formation.md`](./creation-formation.md))
+   - **Export JSON formations** → **`/administration/export-formation-json`** (sélection d’une ou plusieurs formations ; export brut Mongo + matières et professeurs référencés ; même permission **`feature.creation.formation`** ; id matrice **`hub.export_formation_json`** — détail : [`export-json-formation.md`](./export-json-formation.md))
    - **Création salle** → **`/administration/creation-salle`** (référentiel salles CRUD ; classique ou salle spécifique ; permission **`feature.creation.salle`** ; rôle **`création_salle`** — [`creation-gestion-salles.md`](./creation-gestion-salles.md))
    - **Matrice visibilité menus** → **`/administration/matricemenu`** (hors registre ; pas pilotée par la matrice elle‑même)
-3. Chaque sous‑route métier est protégée par **sa permission dédiée** ; le **`layout.tsx`** du segment autorise l’entrée si **l’union** des permissions listées dans `ADMIN_SEGMENT_PERMISSIONS` (`keys.ts`) est satisfaite (dont création classe / professeur / matière / contenu pédagogique / salle, pour les comptes sans droit hub « pur » mais avec ces rôles de base ; liens directs possibles vers les gardes enfants).
+3. Chaque sous‑route métier est protégée par **sa permission dédiée** ; le **`layout.tsx`** du segment autorise l’entrée si **l’union** des permissions listées dans `ADMIN_SEGMENT_PERMISSIONS` (`keys.ts`) est satisfaite (dont création classe / professeur / matière / formation / salle, pour les comptes sans droit hub « pur » mais avec ces rôles de base ; liens directs possibles vers les gardes enfants).
 
 ## Permissions (`keys.ts`)
 
@@ -27,7 +28,7 @@ Ce document décrit le **hub `/administration`**, les permissions associées et 
 | `PERMISSION_CREATION_CLASSE` | `feature.creation.classe` | Page hub + **`/administration/creation-classe`** |
 | `PERMISSION_CREATION_PROFESSEUR` | `feature.creation.professeur` | Page hub + référentiel CRUD **`/administration/creation-professeur`** |
 | `PERMISSION_CREATION_MATIERE` | `feature.creation.matiere` | Page hub + **`/administration/creation-matiere`** |
-| `PERMISSION_CREATION_CONTENU_PEDAGOGIQUE` | `feature.creation.contenu_pedagogique` | Page hub + **`/administration/creation-contenu-pedagogique`** |
+| `PERMISSION_CREATION_FORMATION` | `feature.creation.formation` | Page hub + **`/administration/creation-formation`** + **`/administration/export-formation-json`** |
 | `PERMISSION_CREATION_SALLE` | `feature.creation.salle` | Page hub + **`/administration/creation-salle`** |
 
 Le rôle Mongo **`admin`** (seed [`seed-roles.ts`](../app/scripts/init/seed-roles.ts)) reçoit l’union **`ALL_APP_PERMISSION_KEYS`** : après ajout des clés, exécuter depuis **`app/`** :
@@ -50,8 +51,12 @@ pour réinjecter les permissions sur les documents `Role`.
 | [`app/src/app/administration/_actions/professeurs.ts`](../app/src/app/administration/_actions/professeurs.ts) | Actions serveur `Professeur` (création, mise à jour, suppression) |
 | [`app/src/app/administration/creation-matiere/page.tsx`](../app/src/app/administration/creation-matiere/page.tsx) | Référentiel matières CRUD (garde **`feature.creation.matiere`**) |
 | [`app/src/app/administration/_actions/matieres.ts`](../app/src/app/administration/_actions/matieres.ts) | Actions serveur `Matiere` |
-| [`app/src/app/administration/creation-contenu-pedagogique/page.tsx`](../app/src/app/administration/creation-contenu-pedagogique/page.tsx) | Contenus pédagogiques (regroupements matières ; **`feature.creation.contenu_pedagogique`**) |
-| [`app/src/app/administration/_actions/contenuPedagogique.ts`](../app/src/app/administration/_actions/contenuPedagogique.ts) | CRUD `ContenuPedagogique` + création matière depuis ce flux |
+| [`app/src/app/administration/creation-formation/page.tsx`](../app/src/app/administration/creation-formation/page.tsx) | Formations (regroupements matières ; **`feature.creation.formation`**) |
+| [`app/src/app/administration/_actions/formation.ts`](../app/src/app/administration/_actions/formation.ts) | CRUD `Formation` + création matière depuis ce flux |
+| [`app/src/app/administration/export-formation-json/page.tsx`](../app/src/app/administration/export-formation-json/page.tsx) | Export JSON formations (garde **`feature.creation.formation`**) |
+| [`app/src/app/administration/_actions/exportFormationSnapshot.ts`](../app/src/app/administration/_actions/exportFormationSnapshot.ts) | Lecture seule ; snapshot formations + matières + professeurs liés |
+| [`app/src/lib/serialization/mongoLeanToJson.ts`](../app/src/lib/serialization/mongoLeanToJson.ts) | Sérialisation `ObjectId` / `Date` pour exports JSON |
+| [`scripts/init/migrate-hub-export-formation-tile.ts`](../app/scripts/init/migrate-hub-export-formation-tile.ts) | Initialise `hub.export_formation_json` dans la matrice (copie depuis `hub.creation_formation`) |
 | [`app/src/app/administration/creation-salle/page.tsx`](../app/src/app/administration/creation-salle/page.tsx) | Référentiel salles CRUD (garde **`feature.creation.salle`**) |
 | [`app/src/app/administration/_actions/salles.ts`](../app/src/app/administration/_actions/salles.ts) | Actions serveur `Salle` |
 | [`app/src/app/administration/matricemenu/page.tsx`](../app/src/app/administration/matricemenu/page.tsx) | Matrice visibilité |
@@ -86,6 +91,7 @@ Pour restreindre **l’affichage** des tuiles par **rôle métier**, voir **[mat
 
 ## Voir aussi
 
+- [Export JSON formations](./export-json-formation.md)
 - [Gestion des salles (référentiel)](./creation-gestion-salles.md)
 - [Matrice visibilité des menus](./matrice-visibilite-menus.md)
 - [Authentification et rôles](./authentification-et-roles.md)

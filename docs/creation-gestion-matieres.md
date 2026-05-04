@@ -35,7 +35,7 @@ Après chaque mutation réussie, `revalidatePath('/administration/creation-matie
 - Mode **classique** : `salleIds` est persisté vide.
 - Mode **liste** : au moins une salle cochée ; chaque id doit exister dans la collection **`Salle`**.
 
-La création de matière depuis le flux **contenu pédagogique** fixe explicitement `salleMode: "classique"` et `salleIds: []` (voir [`contenuPedagogique.ts`](../app/src/app/administration/_actions/contenuPedagogique.ts)).
+La création de matière depuis le flux **formation** fixe explicitement `salleMode: "classique"` et `salleIds: []` (voir [`formation.ts`](../app/src/app/administration/_actions/formation.ts)). Les **heures prévues** pour une matière dans un bloc sont portées par le document **`Formation`** (`lignes[].nombreHeuresPrevues`), pas par **`Matiere`** — voir [`creation-formation.md`](./creation-formation.md).
 
 ## Limites connues
 

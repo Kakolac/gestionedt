@@ -3,17 +3,17 @@
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useMemo, useState } from "react";
 import {
-  updateContenuPedagogiqueAction,
-  type ContenuPedagogiqueActionState,
-} from "@/app/administration/_actions/contenuPedagogique";
+  updateFormationAction,
+  type FormationActionState,
+} from "@/app/administration/_actions/formation";
 import {
-  AjouterLigneContenuPedagogiqueModal,
-  type AjouterLigneContenuResult,
-} from "@/components/administration/AjouterLigneContenuPedagogiqueModal";
-import type { MatiereOptionCourte } from "@/components/administration/CreerContenuPedagogiqueModal";
-import type { ProfesseurOption } from "@/components/administration/ContenuPedagogiqueProfesseursChecklist";
+  AjouterLigneFormationModal,
+  type AjouterLigneFormationResult,
+} from "@/components/administration/AjouterLigneFormationModal";
+import type { MatiereOptionCourte } from "@/components/administration/CreerFormationModal";
+import type { ProfesseurOption } from "@/components/administration/FormationProfesseursChecklist";
 
-export type ContenuPedagogiqueLigneListe = {
+export type FormationLigneListe = {
   matiereId: string;
   matiereNom: string;
   professeurIds: string[];
@@ -21,13 +21,13 @@ export type ContenuPedagogiqueLigneListe = {
   nombreHeuresPrevues: number;
 };
 
-export type ContenuPedagogiqueRow = {
+export type FormationRow = {
   id: string;
   nom: string;
   description: string;
   matiereIds: string[];
   matieresLabel: string;
-  lignesListe: ContenuPedagogiqueLigneListe[];
+  lignesListe: FormationLigneListe[];
   professeurIds: string[];
   professeursLabel: string;
   nombreHeures: number;
@@ -51,7 +51,7 @@ type DraftLigne =
       nombreHeuresPrevues: number;
     };
 
-function rowVersDrafts(row: ContenuPedagogiqueRow): DraftLigne[] {
+function rowVersDrafts(row: FormationRow): DraftLigne[] {
   return row.lignesListe.map((ligne, idx) => ({
     clientKey: `init-${row.id}-${idx}-${ligne.matiereId}`,
     kind: "existing",
@@ -81,7 +81,7 @@ function draftVersPayloadJson(drafts: DraftLigne[]): string {
   return JSON.stringify(payload);
 }
 
-function resultVersDraft(r: AjouterLigneContenuResult, key: string): DraftLigne {
+function resultVersDraft(r: AjouterLigneFormationResult, key: string): DraftLigne {
   if (r.mode === "existing") {
     return {
       clientKey: key,
@@ -105,15 +105,15 @@ function resultVersDraft(r: AjouterLigneContenuResult, key: string): DraftLigne 
 type Props = {
   open: boolean;
   onClose: () => void;
-  row: ContenuPedagogiqueRow | null;
+  row: FormationRow | null;
   toutesLesMatieres: MatiereOptionCourte[];
   matiereIdsReserveesAilleurs: string[];
   professeurOptions: ProfesseurOption[];
 };
 
-const initial: ContenuPedagogiqueActionState | undefined = undefined;
+const initial: FormationActionState | undefined = undefined;
 
-export function ModifierContenuPedagogiqueModal({
+export function ModifierFormationModal({
   open,
   onClose,
   row,
@@ -129,7 +129,7 @@ export function ModifierContenuPedagogiqueModal({
   const [addModalKey, setAddModalKey] = useState(0);
 
   const [state, formAction, pending] = useActionState(
-    updateContenuPedagogiqueAction,
+    updateFormationAction,
     initial
   );
 
@@ -191,26 +191,26 @@ export function ModifierContenuPedagogiqueModal({
         <div
           role="dialog"
           aria-modal="true"
-          aria-labelledby="modifier-contenu-pedagogique-titre"
+          aria-labelledby="modifier-formation-titre"
           className="max-h-[92vh] w-full max-w-[min(94vw,36rem)] overflow-y-auto rounded-2xl border border-white/60 bg-white p-[min(5vw,1.25rem)] shadow-xl"
           onMouseDown={(e) => e.stopPropagation()}
         >
           <h2
-            id="modifier-contenu-pedagogique-titre"
+            id="modifier-formation-titre"
             className="text-lg font-semibold text-slate-900"
           >
-            Modifier le contenu pédagogique
+            Modifier la formation
           </h2>
           <p className="mt-1 text-xs text-slate-600">{row.matieresLabel}</p>
 
           <form action={formAction} className="mt-[2vh] flex flex-col gap-[2vh]">
-            <input type="hidden" name="contenuPedagogiqueId" value={row.id} />
+            <input type="hidden" name="formationId" value={row.id} />
             <input type="hidden" name="lignesJson" value={lignesJson} />
 
             <label className="flex flex-col gap-1 text-sm">
-              <span className="font-medium text-slate-800">Nom du contenu</span>
+              <span className="font-medium text-slate-800">Nom de la formation</span>
               <input
-                name="nomContenu"
+                name="nomFormation"
                 type="text"
                 required
                 maxLength={200}
@@ -223,7 +223,7 @@ export function ModifierContenuPedagogiqueModal({
             <label className="flex flex-col gap-1 text-sm">
               <span className="font-medium text-slate-800">Description</span>
               <textarea
-                name="descriptionContenu"
+                name="descriptionFormation"
                 rows={3}
                 maxLength={2000}
                 disabled={pending}
@@ -350,7 +350,7 @@ export function ModifierContenuPedagogiqueModal({
         </div>
       </div>
 
-      <AjouterLigneContenuPedagogiqueModal
+      <AjouterLigneFormationModal
         key={addModalKey}
         open={addOpen}
         onClose={() => setAddOpen(false)}

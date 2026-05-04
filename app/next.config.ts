@@ -25,6 +25,15 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: appDir,
   },
+  async redirects() {
+    return [
+      {
+        source: "/administration/creation-contenu-pedagogique",
+        destination: "/administration/creation-formation",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

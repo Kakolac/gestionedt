@@ -3,16 +3,16 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { liveSessionHasAnyPermission } from "@/lib/authz";
 import { connectDB } from "@/lib/mongodb";
-import { ContenuPedagogique } from "@/lib/models/ContenuPedagogique";
+import { Formation } from "@/lib/models/Formation";
 import { Matiere } from "@/lib/models/Matiere";
 import { Professeur } from "@/lib/models/Professeur";
-import { PERMISSION_CREATION_CONTENU_PEDAGOGIQUE } from "@/lib/permissions/keys";
-import { GestionContenuPedagogiquePanel } from "@/components/administration/GestionContenuPedagogiquePanel";
+import { PERMISSION_CREATION_FORMATION } from "@/lib/permissions/keys";
+import { GestionFormationPanel } from "@/components/administration/GestionFormationPanel";
 import type {
-  ContenuPedagogiqueLigneListe,
-  ContenuPedagogiqueRow,
-} from "@/components/administration/ModifierContenuPedagogiqueModal";
-import type { ProfesseurOption } from "@/components/administration/ContenuPedagogiqueProfesseursChecklist";
+  FormationLigneListe,
+  FormationRow,
+} from "@/components/administration/ModifierFormationModal";
+import type { ProfesseurOption } from "@/components/administration/FormationProfesseursChecklist";
 
 function libelleProfesseurCourte(p: {
   prenom?: string | null;
@@ -74,8 +74,8 @@ function nomEtDescriptionDepuisLean(
     typeof f.nom === "string" && f.nom.trim().length > 0
       ? f.nom.trim()
       : mids.length === 1
-        ? (nomMatiere.get(mids[0]) ?? "Contenu pédagogique")
-        : "Contenu pédagogique";
+        ? (nomMatiere.get(mids[0]) ?? "Formation")
+        : "Formation";
 
   let description =
     typeof f.description === "string" && f.description.trim().length > 0
@@ -92,14 +92,14 @@ function nomEtDescriptionDepuisLean(
   return { nom, description };
 }
 
-export default async function CreationContenuPedagogiquePage() {
+export default async function CreationFormationPage() {
   const session = await auth();
   if (!session?.user) {
     redirect("/connexion");
   }
 
   const allowed = await liveSessionHasAnyPermission(session, [
-    PERMISSION_CREATION_CONTENU_PEDAGOGIQUE,
+    PERMISSION_CREATION_FORMATION,
   ]);
   if (!allowed) {
     redirect("/administration");
@@ -108,7 +108,7 @@ export default async function CreationContenuPedagogiquePage() {
   await connectDB();
 
   const [fichesLean, matsLean, profsLean] = await Promise.all([
-    ContenuPedagogique.find({}).lean(),
+    Formation.find({}).lean(),
     Matiere.find({}).sort({ nom: 1 }).select("nom description").lean(),
     Professeur.find({})
       .sort({ nom: 1, prenom: 1 })
@@ -156,7 +156,7 @@ export default async function CreationContenuPedagogiquePage() {
     .filter((m) => !midsDejaAssignes.has(String(m._id)))
     .map((m) => ({ id: String(m._id), nom: m.nom }));
 
-  const rows: ContenuPedagogiqueRow[] = [...fichesLean]
+  const rows: FormationRow[] = [...fichesLean]
     .sort((a, b) => {
       const ma = matiereIdsFromFicheLean(a as Record<string, unknown>);
       const mb = matiereIdsFromFicheLean(b as Record<string, unknown>);
@@ -185,7 +185,7 @@ export default async function CreationContenuPedagogiquePage() {
       const nom = base.nom;
 
       const rawLignes = f.lignes;
-      let lignesListe: ContenuPedagogiqueLigneListe[];
+      let lignesListe: FormationLigneListe[];
 
       if (Array.isArray(rawLignes) && rawLignes.length > 0) {
         lignesListe = [];
@@ -288,7 +288,7 @@ export default async function CreationContenuPedagogiquePage() {
           Administration
         </p>
         <h1 className="mt-2 bg-gradient-to-r from-indigo-700 via-fuchsia-600 to-sky-600 bg-clip-text text-3xl font-semibold tracking-tight text-transparent">
-          Contenus pédagogiques
+          Formations
         </h1>
         <p className="mt-2 max-w-[92vw] text-slate-600">
           Ajoutez un <strong>intitulé</strong>, une <strong>description</strong>, puis&nbsp;
@@ -296,7 +296,7 @@ export default async function CreationContenuPedagogiquePage() {
           chacune vous indiquez les <strong>heures prévues</strong>, le ou les{" "}
           <strong>professeurs</strong> dans une modale, puis enchaînez sur d&apos;autres matières.
           Le champ <strong>total</strong> du bloc est la somme des heures par matière. Chaque matière ne
-          peut être que dans un seul contenu. Création d&apos;une matière également via{" "}
+          peut être que dans une seule formation. Création d&apos;une matière également via{" "}
           <Link
             href="/administration/creation-matiere"
             className="font-medium text-indigo-600 underline-offset-4 hover:underline"
@@ -305,13 +305,13 @@ export default async function CreationContenuPedagogiquePage() {
           </Link>
           ). Permission{" "}
           <code className="rounded bg-slate-100 px-1 text-xs">
-            {PERMISSION_CREATION_CONTENU_PEDAGOGIQUE}
+            {PERMISSION_CREATION_FORMATION}
           </code>
           .
         </p>
       </header>
 
-      <GestionContenuPedagogiquePanel
+      <GestionFormationPanel
         rows={rows}
         matiereDisponiblesPourCreation={matiereDisponiblesPourCreation}
         toutesLesMatieres={toutesLesMatieres}
