@@ -15,6 +15,7 @@ alwaysApply: true
 - **INSPIRE TOI** : je peux te demander de t inspirer de : ... dans ce cas je te donne un repertoire d ancien projet, bout de code etc. Dans ce cas tu ne dois JAMAIS les utiliser mais uniquement t'en inspirer pour faire du tout nouveau code sans aucune relation avec celui la. Cela me permet de te proposer des composant, que j ai deja utilise, des design etc .. Ces codes seront toujours dans un repertoire : inspiration
 - **Toujours faire la docs dans /docs** : chaque nouveauté doit toujours faire l objet d'une documentation. il doit y avoir une documentation utilisateur, et surtout une documentation qui peut servir de contexte qui pourra etre utiliser pour aider au developpement ou a la compréhension du code et des flux.
 - **Toujours verifier la docs dans /docs** : si tu cherches comment realiser une action tu peux regarder dans la doc si il y a pas une trace de comment cela été implémenter. tu utilises cela quand tu as besoins de plus d'infos
+- **Toujours utiliste vh et vw pour la conception de UI** :
 - **Séparation en fichiers** : organiser le code en fichiers distincts (un rôle / une responsabilité par fichier) pour faciliter le debug et la maintenabilité.
 - **Répondre en français** dans les échanges et la documentation du projet.
 - **Ne jamais supprimer** une fonction ou une fonctionnalité existante sans demander explicitement à l'utilisateur.

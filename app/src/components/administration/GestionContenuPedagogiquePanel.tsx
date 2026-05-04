@@ -1,0 +1,204 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
+import {
+  CreerContenuPedagogiqueModal,
+  type MatiereOptionCourte,
+} from "@/components/administration/CreerContenuPedagogiqueModal";
+import type { ContenuPedagogiqueRow } from "@/components/administration/ModifierContenuPedagogiqueModal";
+import { ModifierContenuPedagogiqueModal } from "@/components/administration/ModifierContenuPedagogiqueModal";
+import type { ProfesseurOption } from "@/components/administration/ContenuPedagogiqueProfesseursChecklist";
+import { SupprimerContenuPedagogiqueConfirmModal } from "@/components/administration/SupprimerContenuPedagogiqueConfirmModal";
+
+type Props = {
+  rows: ContenuPedagogiqueRow[];
+  matiereDisponiblesPourCreation: MatiereOptionCourte[];
+  toutesLesMatieres: MatiereOptionCourte[];
+  professeurOptions: ProfesseurOption[];
+};
+
+function matiereIdsUtilisesAilleurs(rows: ContenuPedagogiqueRow[], excludeId: string | null): string[] {
+  const s = new Set<string>();
+  for (const r of rows) {
+    if (excludeId != null && r.id === excludeId) {
+      continue;
+    }
+    for (const mid of r.matiereIds) {
+      const t = mid.trim();
+      if (t) s.add(t);
+    }
+  }
+  return [...s];
+}
+
+export function GestionContenuPedagogiquePanel({
+  rows,
+  matiereDisponiblesPourCreation,
+  toutesLesMatieres,
+  professeurOptions,
+}: Props) {
+  const router = useRouter();
+  const [createKey, setCreateKey] = useState(0);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editRow, setEditRow] = useState<ContenuPedagogiqueRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    id: string;
+    contenuLabel: string;
+  } | null>(null);
+
+  const matiereIdsReserveesAilleurs = useMemo(() => {
+    if (editRow == null) {
+      return [];
+    }
+    return matiereIdsUtilisesAilleurs(rows, editRow.id);
+  }, [editRow, rows]);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex justify-end">
+        <button
+          type="button"
+          className="rounded-xl bg-gradient-to-r from-indigo-600 to-fuchsia-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:from-indigo-500 hover:to-fuchsia-500"
+          onClick={() => {
+            setCreateKey((k) => k + 1);
+            setCreateOpen(true);
+          }}
+        >
+          Nouveau contenu
+        </button>
+      </div>
+
+      <div className="overflow-x-auto rounded-2xl border border-white/60 bg-white/80 shadow-[0_8px_30px_rgba(49,46,129,0.06)]">
+        <table className="min-w-full border-collapse text-left text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 bg-slate-50/80">
+              <th className="px-4 py-3 font-semibold text-slate-800">Nom</th>
+              <th className="px-4 py-3 font-semibold text-slate-800">
+                Description
+              </th>
+              <th className="min-w-[8rem] px-4 py-3 font-semibold text-slate-800">
+                Matières
+              </th>
+              <th className="px-4 py-3 font-semibold text-slate-800">
+                Professeurs
+              </th>
+              <th className="px-4 py-3 font-semibold text-slate-800">Heures</th>
+              <th className="px-4 py-3 font-semibold text-slate-800">
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td className="px-4 py-6 text-slate-500" colSpan={6}>
+                  Aucun contenu. Utilisez « Nouveau contenu » pour définir un
+                  regroupement (nom, description, matières avec heures prévues par matière,
+                  intervenants).
+                </td>
+              </tr>
+            ) : (
+              rows.map((row) => (
+                <tr
+                  key={row.id}
+                  className="border-b border-slate-100 last:border-0"
+                >
+                  <td className="px-4 py-3 font-medium text-slate-800">
+                    {row.nom}
+                  </td>
+                  <td className="max-w-[min(40vw,14rem)] px-4 py-3 text-xs leading-snug text-slate-600">
+                    <span className="line-clamp-3">{row.description || "—"}</span>
+                  </td>
+                  <td className="max-w-[min(52vw,20rem)] px-4 py-3 text-xs text-slate-600">
+                    <span className="line-clamp-2">{row.matieresLabel}</span>
+                    {row.lignesListe.length > 0 ? (
+                      <ul className="mt-1 space-y-0.5 border-t border-slate-100 pt-1 text-[0.65rem] leading-snug text-slate-500">
+                        {row.lignesListe.map((l) => (
+                          <li key={l.matiereId}>
+                            {l.matiereNom}
+                            <span className="tabular-nums text-slate-600">
+                              {" "}
+                              — {l.nombreHeuresPrevues} h
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </td>
+                  <td className="max-w-[min(40vw,16rem)] px-4 py-3 text-xs text-slate-600">
+                    <span className="line-clamp-2">{row.professeursLabel}</span>
+                  </td>
+                  <td className="px-4 py-3 tabular-nums text-slate-800">
+                    {row.nombreHeures}
+                    <span className="mt-0.5 block text-[0.65rem] font-normal text-slate-500">
+                      total
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-slate-50"
+                        onClick={() => setEditRow(row)}
+                      >
+                        Modifier
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-lg border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                        onClick={() =>
+                          setDeleteTarget({
+                            id: row.id,
+                            contenuLabel: row.nom,
+                          })
+                        }
+                      >
+                        Supprimer
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <CreerContenuPedagogiqueModal
+        key={createKey}
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onSuccess={() => {
+          setCreateKey((k) => k + 1);
+          setCreateOpen(false);
+          router.refresh();
+        }}
+        matiereDisponibles={matiereDisponiblesPourCreation}
+        professeurOptions={professeurOptions}
+      />
+
+      <ModifierContenuPedagogiqueModal
+        key={editRow ? `modifier-${editRow.id}` : "modifier-closed"}
+        open={editRow != null}
+        onClose={() => setEditRow(null)}
+        row={editRow}
+        toutesLesMatieres={toutesLesMatieres}
+        matiereIdsReserveesAilleurs={matiereIdsReserveesAilleurs}
+        professeurOptions={professeurOptions}
+      />
+
+      <SupprimerContenuPedagogiqueConfirmModal
+        key={
+          deleteTarget
+            ? `supprimer-${deleteTarget.id}`
+            : "supprimer-closed"
+        }
+        open={deleteTarget != null}
+        onClose={() => setDeleteTarget(null)}
+        contenuPedagogiqueId={deleteTarget?.id ?? null}
+        contenuLabel={deleteTarget?.contenuLabel ?? null}
+      />
+    </div>
+  );
+}
