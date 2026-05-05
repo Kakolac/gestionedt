@@ -1,6 +1,15 @@
 import mongoose, { Schema, model, models, type InferSchemaType } from "mongoose";
 import { PROFESSEUR_CONTRAINTE_KINDS } from "@/lib/professeurContraintes.shared";
 
+const CreneauInterditSchema = new Schema(
+  {
+    jour: { type: Number, required: true, min: 1, max: 7 },
+    heureDebut: { type: Number, required: true },
+    heureFin: { type: Number, required: true },
+  },
+  { _id: false }
+);
+
 const ProfesseurContrainteSchema = new Schema(
   {
     kind: {
@@ -12,6 +21,8 @@ const ProfesseurContrainteSchema = new Schema(
     actif: { type: Boolean, default: true },
     /** 1 = lundi … 7 = dimanche (ISO weekday). */
     joursSemaine: { type: [Number], default: undefined },
+    /** Fenêtres interdites (`creneaux_interdits`) ; fin horaire exclusive. */
+    creneaux: { type: [CreneauInterditSchema], default: undefined },
     matiereId: {
       type: Schema.Types.ObjectId,
       ref: "Matiere",

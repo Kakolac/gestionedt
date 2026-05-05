@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import {
   CONTRAINTE_MAX_COUNT,
   MAX_COURS_PAR_JOUR,
+  MAX_CRENEAUX_PAR_CONTRAINTE,
   MAX_HEURES_CONSECUTIVES,
   canonObjectIdKey,
   isLikelyMongoObjectId,
@@ -19,6 +20,7 @@ export type {
 export {
   CONTRAINTE_MAX_COUNT,
   MAX_COURS_PAR_JOUR,
+  MAX_CRENEAUX_PAR_CONTRAINTE,
   MAX_HEURES_CONSECUTIVES,
   PROFESSEUR_CONTRAINTE_KINDS,
 } from "@/lib/professeurContraintes.shared";
@@ -28,6 +30,7 @@ export type ProfesseurContrainteMongo = {
   priorite: number;
   actif: boolean;
   joursSemaine?: number[];
+  creneaux?: Array<{ jour: number; heureDebut: number; heureFin: number }>;
   matiereId?: mongoose.Types.ObjectId;
   maxHeuresConsecutives?: number;
   maxCoursParJour?: number;
@@ -140,6 +143,67 @@ export function parseContraintesJsonForSave(
       continue;
     }
 
+    if (kindRaw === "creneaux_interdits") {
+      const creneauxRaw = o.creneaux;
+      if (!Array.isArray(creneauxRaw) || creneauxRaw.length === 0) {
+        return {
+          ok: false,
+          error: `Contrainte #${i + 1} : ajouter au moins un créneau interdit.`,
+        };
+      }
+      if (creneauxRaw.length > MAX_CRENEAUX_PAR_CONTRAINTE) {
+        return {
+          ok: false,
+          error: `Contrainte #${i + 1} : maximum ${MAX_CRENEAUX_PAR_CONTRAINTE} créneaux.`,
+        };
+      }
+      const creneaux: Array<{
+        jour: number;
+        heureDebut: number;
+        heureFin: number;
+      }> = [];
+      for (let k = 0; k < creneauxRaw.length; k += 1) {
+        const cr = creneauxRaw[k];
+        if (!cr || typeof cr !== "object") {
+          return {
+            ok: false,
+            error: `Contrainte #${i + 1}, créneau #${k + 1} : entrée invalide.`,
+          };
+        }
+        const co = cr as Record<string, unknown>;
+        const jour = typeof co.jour === "number" ? co.jour : Number(co.jour);
+        const hd =
+          typeof co.heureDebut === "number"
+            ? co.heureDebut
+            : Number(co.heureDebut);
+        const hf =
+          typeof co.heureFin === "number" ? co.heureFin : Number(co.heureFin);
+        if (
+          !Number.isInteger(jour) ||
+          jour < 1 ||
+          jour > 7 ||
+          !Number.isInteger(hd) ||
+          !Number.isInteger(hf) ||
+          hd < 0 ||
+          hf > 24 ||
+          hd >= hf
+        ) {
+          return {
+            ok: false,
+            error: `Contrainte #${i + 1}, créneau #${k + 1} : jour 1–7 et heures entières [début, fin) avec 0 ≤ début < fin ≤ 24.`,
+          };
+        }
+        creneaux.push({ jour, heureDebut: hd, heureFin: hf });
+      }
+      out.push({
+        kind: "creneaux_interdits",
+        priorite: pr,
+        actif,
+        creneaux,
+      });
+      continue;
+    }
+
     const midRaw = o.matiereId;
     if (typeof midRaw !== "string" || !mongoose.isValidObjectId(midRaw.trim())) {
       return {
@@ -248,6 +312,54 @@ export function leanWireFromContraintesDoc(raw: unknown): ProfesseurContrainteWi
         priorite,
         actif,
         joursSemaine: [...new Set(days)].sort((a, b) => a - b),
+      });
+      continue;
+    }
+
+    if (kind === "creneaux_interdits") {
+      const creneauxRaw = o.creneaux;
+      if (!Array.isArray(creneauxRaw)) {
+        continue;
+      }
+      const creneaux: Array<{
+        jour: number;
+        heureDebut: number;
+        heureFin: number;
+      }> = [];
+      for (const cr of creneauxRaw) {
+        if (!cr || typeof cr !== "object") {
+          continue;
+        }
+        const co = cr as Record<string, unknown>;
+        const jour = typeof co.jour === "number" ? co.jour : Number(co.jour);
+        const hd =
+          typeof co.heureDebut === "number"
+            ? co.heureDebut
+            : Number(co.heureDebut);
+        const hf =
+          typeof co.heureFin === "number" ? co.heureFin : Number(co.heureFin);
+        if (
+          !Number.isInteger(jour) ||
+          jour < 1 ||
+          jour > 7 ||
+          !Number.isInteger(hd) ||
+          !Number.isInteger(hf) ||
+          hd < 0 ||
+          hf > 24 ||
+          hd >= hf
+        ) {
+          continue;
+        }
+        creneaux.push({ jour, heureDebut: hd, heureFin: hf });
+      }
+      if (creneaux.length === 0) {
+        continue;
+      }
+      out.push({
+        kind: "creneaux_interdits",
+        priorite,
+        actif,
+        creneaux,
       });
       continue;
     }

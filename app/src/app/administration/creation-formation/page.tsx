@@ -139,22 +139,12 @@ export default async function CreationFormationPage() {
     });
   }
 
-  const midsDejaAssignes = new Set<string>();
-  for (const fRaw of fichesLean) {
-    const f = fRaw as Record<string, unknown>;
-    for (const mid of matiereIdsFromFicheLean(f)) {
-      midsDejaAssignes.add(mid);
-    }
-  }
-
   const toutesLesMatieres = matsLean.map((m) => ({
     id: String(m._id),
     nom: m.nom,
   }));
 
-  const matiereDisponiblesPourCreation = matsLean
-    .filter((m) => !midsDejaAssignes.has(String(m._id)))
-    .map((m) => ({ id: String(m._id), nom: m.nom }));
+  const matiereDisponiblesPourCreation = toutesLesMatieres;
 
   const rows: FormationRow[] = [...fichesLean]
     .sort((a, b) => {
@@ -295,8 +285,10 @@ export default async function CreationFormationPage() {
           une <strong>matière à la fois</strong> (existante ou nouvelle comme avant)&nbsp;: pour
           chacune vous indiquez les <strong>heures prévues</strong>, le ou les{" "}
           <strong>professeurs</strong> dans une modale, puis enchaînez sur d&apos;autres matières.
-          Le champ <strong>total</strong> du bloc est la somme des heures par matière. Chaque matière ne
-          peut être que dans une seule formation. Création d&apos;une matière également via{" "}
+          Le champ <strong>total</strong> du bloc est la somme des heures par matière. La même
+          matière du référentiel peut être utilisée dans <strong>plusieurs</strong> formations ;
+          dans une formation donnée, elle ne peut figurer qu&apos;<strong>une fois</strong> par
+          bloc. Création d&apos;une matière également via{" "}
           <Link
             href="/administration/creation-matiere"
             className="font-medium text-indigo-600 underline-offset-4 hover:underline"

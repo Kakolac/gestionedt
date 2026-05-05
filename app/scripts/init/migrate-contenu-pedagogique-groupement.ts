@@ -7,7 +7,7 @@
  * - ou **`matiereIds`** + **`professeurIds`** à la racine (intermédiaire),
  *
  * vers `lignes` puis suppression des anciens champs racine si nécessaire.
- * Recrée aussi l’index unique sur **`lignes.matiereId`** au lieu des anciens index.
+ * Recrée aussi un index **non unique** sur **`lignes.matiereId`** (réutilisation d’une matière dans plusieurs formations).
  *
  * Usage : depuis **`app/`** — `npx tsx scripts/init/migrate-contenu-pedagogique-groupement.ts`
  */
@@ -155,8 +155,8 @@ async function main(): Promise<void> {
   }
 
   try {
-    await col.createIndex({ "lignes.matiereId": 1 }, { unique: true });
-    console.info("Index unique créé ou déjà présent sur lignes.matiereId.");
+    await col.createIndex({ "lignes.matiereId": 1 }, { unique: false });
+    console.info("Index non unique créé ou déjà présent sur lignes.matiereId.");
   } catch (e: unknown) {
     console.warn("createIndex lignes.matiereId:", e);
   }

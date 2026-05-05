@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { ensureFormationMatiereIndexNonUnique } from "@/lib/formationMongoIndexes";
 
 interface MongooseCache {
   conn: typeof mongoose | null;
@@ -33,5 +34,6 @@ export async function connectDB(): Promise<typeof mongoose> {
     cache.promise = mongoose.connect(uri);
   }
   cache.conn = await cache.promise;
+  await ensureFormationMatiereIndexNonUnique();
   return cache.conn;
 }

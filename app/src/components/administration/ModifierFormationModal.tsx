@@ -107,7 +107,6 @@ type Props = {
   onClose: () => void;
   row: FormationRow | null;
   toutesLesMatieres: MatiereOptionCourte[];
-  matiereIdsReserveesAilleurs: string[];
   professeurOptions: ProfesseurOption[];
 };
 
@@ -118,7 +117,6 @@ export function ModifierFormationModal({
   onClose,
   row,
   toutesLesMatieres,
-  matiereIdsReserveesAilleurs,
   professeurOptions,
 }: Props) {
   const router = useRouter();
@@ -140,11 +138,6 @@ export function ModifierFormationModal({
     }
   }, [state, onClose, router]);
 
-  const externes = useMemo(
-    () => new Set(matiereIdsReserveesAilleurs.map((x) => x.trim()).filter(Boolean)),
-    [matiereIdsReserveesAilleurs]
-  );
-
   const idsDansBrouillonExisting = useMemo(
     () =>
       lignesDraft
@@ -153,15 +146,11 @@ export function ModifierFormationModal({
     [lignesDraft]
   );
 
-  /** Matières proposées pour une nouvelle ligne : pas déjà utilisée dans ce brouillon, et pas réservée ailleurs. */
+  /** Matières proposées pour une nouvelle ligne : pas déjà utilisée deux fois dans ce brouillon. */
   const matieresPourModaleAjout = useMemo(() => {
     const prisIci = new Set(idsDansBrouillonExisting);
-    return toutesLesMatieres.filter((m) => {
-      if (prisIci.has(m.id)) return false;
-      if (!externes.has(m.id)) return true;
-      return false;
-    });
-  }, [toutesLesMatieres, externes, idsDansBrouillonExisting]);
+    return toutesLesMatieres.filter((m) => !prisIci.has(m.id));
+  }, [toutesLesMatieres, idsDansBrouillonExisting]);
 
   const lignesJson = useMemo(
     () => draftVersPayloadJson(lignesDraft),

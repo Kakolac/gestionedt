@@ -5,6 +5,7 @@ import { liveSessionHasAnyPermission } from "@/lib/authz";
 import { CreerClasseHubTile } from "@/components/administration/CreerClasseHubTile";
 import { CreerFormationHubTile } from "@/components/administration/CreerFormationHubTile";
 import { ExportFormationJsonHubTile } from "@/components/administration/ExportFormationJsonHubTile";
+import { PlanningFormationHubTile } from "@/components/administration/PlanningFormationHubTile";
 import { CreerMatiereHubTile } from "@/components/administration/CreerMatiereHubTile";
 import { CreerSalleHubTile } from "@/components/administration/CreerSalleHubTile";
 import { CreerProfesseurHubTile } from "@/components/administration/CreerProfesseurHubTile";
@@ -32,6 +33,7 @@ export default async function AdministrationHubPage() {
     showCreationMatiereTile,
     showFormationTile,
     showExportFormationJsonTile,
+    showPlanningFormationTile,
     showCreationSalleTile,
     canMatrice,
   ] = await Promise.all([
@@ -43,6 +45,7 @@ export default async function AdministrationHubPage() {
     resolveNavTileVisible(session, "hub.creation_matiere"),
     resolveNavTileVisible(session, "hub.creation_formation"),
     resolveNavTileVisible(session, "hub.export_formation_json"),
+    resolveNavTileVisible(session, "hub.planning_formation"),
     resolveNavTileVisible(session, "hub.creation_salle"),
     liveSessionHasAnyPermission(session, [PERMISSION_ADMIN_MATRICE_MENU]),
   ]);
@@ -55,6 +58,7 @@ export default async function AdministrationHubPage() {
     showCreationMatiereTile ||
     showFormationTile ||
     showExportFormationJsonTile ||
+    showPlanningFormationTile ||
     showCreationSalleTile ||
     canMatrice;
 
@@ -112,6 +116,11 @@ export default async function AdministrationHubPage() {
           {showExportFormationJsonTile ? (
             <li className="min-w-[240px] flex-1 basis-64 max-w-sm">
               <ExportFormationJsonHubTile />
+            </li>
+          ) : null}
+          {showPlanningFormationTile ? (
+            <li className="min-w-[240px] flex-1 basis-64 max-w-sm">
+              <PlanningFormationHubTile />
             </li>
           ) : null}
           {showCreationSalleTile ? (

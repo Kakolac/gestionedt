@@ -8,6 +8,7 @@ import { Formation } from "@/lib/models/Formation";
 import { Matiere } from "@/lib/models/Matiere";
 import { Professeur } from "@/lib/models/Professeur";
 import { PERMISSION_CREATION_FORMATION } from "@/lib/permissions/keys";
+import type { PlanningExportRaw } from "@/lib/planning/planning.types";
 import { mongoLeanToPlainJson } from "@/lib/serialization/mongoLeanToJson";
 
 const MAX_FORMATIONS_PER_EXPORT = 80;
@@ -99,42 +100,22 @@ function collectRefsFromFormationDocs(
   return { matiereIdSet, profIdSet };
 }
 
-export async function exportFormationSnapshotAction(
-  formationIds: string[]
-): Promise<ExportFormationSnapshotState> {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return { ok: false, error: "Non connecté." };
-  }
+export type LoadFormationPlanningSnapshotState =
+  | { ok: true; rawData: PlanningExportRaw }
+  | { ok: false; error: string };
 
-  const allowed = await liveSessionHasAnyPermission(session, [
-    PERMISSION_CREATION_FORMATION,
-  ]);
-  if (!allowed) {
-    return { ok: false, error: "Permission refusée." };
-  }
-
-  if (!Array.isArray(formationIds) || formationIds.length === 0) {
-    return {
-      ok: false,
-      error: "Sélectionnez au moins une formation.",
-    };
-  }
-
-  if (formationIds.length > MAX_FORMATIONS_PER_EXPORT) {
-    return {
-      ok: false,
-      error: `Trop de formations sélectionnées (maximum ${MAX_FORMATIONS_PER_EXPORT}).`,
-    };
-  }
-
-  const uniqueIds = [
-    ...new Set(
-      formationIds.map((id) => id.trim()).filter(mongoose.isValidObjectId)
-    ),
-  ];
+/**
+ * Construit le même jeu de données que l’export JSON (formations + matières + professeurs),
+ * sérialisé en objets JSON plain.
+ */
+async function buildFormationSnapshotPlain(
+  uniqueIds: string[]
+): Promise<
+  | { ok: true; plain: Record<string, unknown> }
+  | { ok: false; error: string }
+> {
   if (uniqueIds.length === 0) {
-    return { ok: false, error: "Identifiants de formation invalides." };
+    return { ok: false, error: "Aucun identifiant de formation valide." };
   }
 
   await connectDB();
@@ -176,7 +157,98 @@ export async function exportFormationSnapshotAction(
   };
 
   const plain = mongoLeanToPlainJson(payload) as Record<string, unknown>;
-  const jsonText = JSON.stringify(plain, null, 2);
+  return { ok: true, plain };
+}
+
+function uniqueValidFormationIds(
+  formationIds: string[]
+): { ok: true; ids: string[] } | { ok: false; error: string } {
+  if (!Array.isArray(formationIds) || formationIds.length === 0) {
+    return {
+      ok: false,
+      error: "Sélectionnez au moins une formation.",
+    };
+  }
+  if (formationIds.length > MAX_FORMATIONS_PER_EXPORT) {
+    return {
+      ok: false,
+      error: `Trop de formations sélectionnées (maximum ${MAX_FORMATIONS_PER_EXPORT}).`,
+    };
+  }
+  const uniqueIds = [
+    ...new Set(
+      formationIds.map((id) => id.trim()).filter(mongoose.isValidObjectId)
+    ),
+  ];
+  if (uniqueIds.length === 0) {
+    return { ok: false, error: "Identifiants de formation invalides." };
+  }
+  return { ok: true, ids: uniqueIds };
+}
+
+/** Données planning pour une ou plusieurs formations (même périmètre que l’export JSON). */
+export async function loadFormationPlanningSnapshotAction(
+  formationIds: string[]
+): Promise<LoadFormationPlanningSnapshotState> {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return { ok: false, error: "Non connecté." };
+  }
+
+  const allowed = await liveSessionHasAnyPermission(session, [
+    PERMISSION_CREATION_FORMATION,
+  ]);
+  if (!allowed) {
+    return { ok: false, error: "Permission refusée." };
+  }
+
+  const picked = uniqueValidFormationIds(formationIds);
+  if (!picked.ok) {
+    return picked;
+  }
+
+  const built = await buildFormationSnapshotPlain(picked.ids);
+  if (!built.ok) {
+    return built;
+  }
+
+  const jsonText = JSON.stringify(built.plain);
+  if (jsonText.length > MAX_JSON_CHARS) {
+    return {
+      ok: false,
+      error: `Jeu de données trop volumineux (limite ${MAX_JSON_CHARS} caractères).`,
+    };
+  }
+
+  return { ok: true, rawData: built.plain as PlanningExportRaw };
+}
+
+export async function exportFormationSnapshotAction(
+  formationIds: string[]
+): Promise<ExportFormationSnapshotState> {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return { ok: false, error: "Non connecté." };
+  }
+
+  const allowed = await liveSessionHasAnyPermission(session, [
+    PERMISSION_CREATION_FORMATION,
+  ]);
+  if (!allowed) {
+    return { ok: false, error: "Permission refusée." };
+  }
+
+  const picked = uniqueValidFormationIds(formationIds);
+  if (!picked.ok) {
+    return picked;
+  }
+
+  const built = await buildFormationSnapshotPlain(picked.ids);
+  if (!built.ok) {
+    return built;
+  }
+
+  const jsonText = JSON.stringify(built.plain, null, 2);
 
   if (jsonText.length > MAX_JSON_CHARS) {
     return {

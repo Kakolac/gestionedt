@@ -15,6 +15,19 @@ function isDuplicateKeyError(e: unknown): boolean {
   return typeof e === "object" && e != null && (e as { code?: number }).code === 11000;
 }
 
+/** Si E11000 sur Formation : indication restart + extrait message Mongo pour diagnostic. */
+function formationDuplicateKeyUserHint(e: unknown): string {
+  const detail =
+    typeof e === "object" && e != null && "message" in e
+      ? String((e as Error).message).slice(0, 260)
+      : "";
+  return (
+    "Contrainte d’unicité MongoDB sur la collection formations (souvent un ancien index sur « matiereId » à la racine du document). " +
+    "Arrêtez puis relancez le serveur Next : au premier chargement, les index obsolètes sont supprimés automatiquement. " +
+    (detail ? `Détail : ${detail}` : "")
+  );
+}
+
 export type FormationActionState =
   | { ok: true; message?: string }
   | { ok: false; error: string };
@@ -82,29 +95,6 @@ async function assertProfesseursOntMatiere(
       ok: false,
       error:
         "Pour une matière déjà créée, chaque professeur sélectionné sur cette ligne doit l’avoir dans sa fiche référentiel.",
-    };
-  }
-  return null;
-}
-
-async function assertMatiereIdsPasDejaDansAutreFormation(
-  matiereOids: mongoose.Types.ObjectId[],
-  excludeFormationId?: string
-): Promise<FormationActionState | null> {
-  if (matiereOids.length === 0) return null;
-  await connectDB();
-  const filter: Record<string, unknown> = {
-    "lignes.matiereId": { $in: matiereOids },
-  };
-  if (excludeFormationId && mongoose.isValidObjectId(excludeFormationId.trim())) {
-    filter._id = { $ne: new mongoose.Types.ObjectId(excludeFormationId.trim()) };
-  }
-  const conflit = await Formation.findOne(filter).select("_id").lean();
-  if (conflit != null) {
-    return {
-      ok: false,
-      error:
-        "Une ou plusieurs matières sont déjà rattachées à une autre formation.",
     };
   }
   return null;
@@ -407,10 +397,6 @@ export async function createFormationAction(
   const totalHeures = sommeHeuresLignes(mongooseLignes);
   if (typeof totalHeures !== "number") return totalHeures;
 
-  const allMid = mongooseLignes.map((x) => x.matiereId);
-  const conflitExterne = await assertMatiereIdsPasDejaDansAutreFormation(allMid, undefined);
-  if (conflitExterne) return conflitExterne;
-
   if (aCreeMatiere) {
     revalidatePath(MATIERE_PATH);
   }
@@ -424,11 +410,7 @@ export async function createFormationAction(
     });
   } catch (e: unknown) {
     if (isDuplicateKeyError(e)) {
-      return {
-        ok: false,
-        error:
-          "Impossible d’enregistrer : une matière est déjà dans une autre formation.",
-      };
+      return { ok: false, error: formationDuplicateKeyUserHint(e) };
     }
     throw e;
   }
@@ -476,10 +458,6 @@ export async function updateFormationAction(
   const totalHeures = sommeHeuresLignes(mongooseLignes);
   if (typeof totalHeures !== "number") return totalHeures;
 
-  const allMid = mongooseLignes.map((x) => x.matiereId);
-  const conflitExterne = await assertMatiereIdsPasDejaDansAutreFormation(allMid, fid);
-  if (conflitExterne) return conflitExterne;
-
   if (aCreeMatiere) {
     revalidatePath(MATIERE_PATH);
   }
@@ -493,11 +471,7 @@ export async function updateFormationAction(
     await doc.save();
   } catch (e: unknown) {
     if (isDuplicateKeyError(e)) {
-      return {
-        ok: false,
-        error:
-          "Conflit : une matière est déjà utilisée dans une autre formation.",
-      };
+      return { ok: false, error: formationDuplicateKeyUserHint(e) };
     }
     throw e;
   }

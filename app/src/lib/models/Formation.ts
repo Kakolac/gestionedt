@@ -23,8 +23,8 @@ const FormationLigneSchema = new Schema(
 /**
  * Formation : nom, description du bloc ; **lignes** (chaque ligne = une
  * matière + les professeurs associés + **heures prévues** pour cette matière dans le
- * bloc). Une matière ne peut appartenir qu’à un seul document (index unique multi-clé
- * sur les `matiereId` des lignes).
+ * bloc). Une même matière du référentiel peut figurer dans **plusieurs** formations ;
+ * dans **un** document, chaque `matiereId` reste unique (validation applicative).
  */
 const FormationSchema = new Schema(
   {
@@ -44,7 +44,8 @@ const FormationSchema = new Schema(
   { timestamps: true }
 );
 
-FormationSchema.index({ "lignes.matiereId": 1 }, { unique: true });
+/** Index non unique : filtrer les formations par matière sans interdire la réutilisation entre fiches. */
+FormationSchema.index({ "lignes.matiereId": 1 });
 
 export type FormationDoc = InferSchemaType<typeof FormationSchema> & {
   _id: mongoose.Types.ObjectId;

@@ -77,6 +77,12 @@ export const NAV_TILE_DEFINITIONS: readonly NavTileDefinition[] = [
     permissionKeys: [PERMISSION_CREATION_FORMATION],
   },
   {
+    id: "hub.planning_formation",
+    label: "Planning formation",
+    scope: "hub",
+    permissionKeys: [PERMISSION_CREATION_FORMATION],
+  },
+  {
     id: "hub.export_formation_json",
     label: "Export JSON formations",
     scope: "hub",

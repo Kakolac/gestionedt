@@ -2,9 +2,20 @@
 
 export const PROFESSEUR_CONTRAINTE_KINDS = [
   "jours_travail",
+  "creneaux_interdits",
   "bloc_consecutif_matiere",
   "volume_jour_matiere",
 ] as const;
+
+/** Fenêtre horaire interdite pour le professeur (fin `heureFin` exclusive, comme la grille planning). */
+export type CreneauInterditWire = {
+  jour: number;
+  heureDebut: number;
+  heureFin: number;
+};
+
+/** Nombre maximum de créneaux listés dans une contrainte « créneaux interdits ». */
+export const MAX_CRENEAUX_PAR_CONTRAINTE = 40;
 
 export type ProfesseurContrainteKind =
   (typeof PROFESSEUR_CONTRAINTE_KINDS)[number];
@@ -23,6 +34,12 @@ export type ProfesseurContrainteWire =
       priorite: number;
       actif: boolean;
       joursSemaine: number[];
+    }
+  | {
+      kind: "creneaux_interdits";
+      priorite: number;
+      actif: boolean;
+      creneaux: CreneauInterditWire[];
     }
   | {
       kind: "bloc_consecutif_matiere";

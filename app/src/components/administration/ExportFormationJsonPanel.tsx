@@ -2,19 +2,19 @@
 
 import { useState, useTransition } from "react";
 import { exportFormationSnapshotAction } from "@/app/administration/_actions/exportFormationSnapshot";
+import { FormationCheckboxList } from "@/components/administration/FormationCheckboxList";
+import type { FormationListOption } from "@/lib/formation/listFormationExportOptions";
 
-export type FormationExportOption = { id: string; label: string };
+export type FormationExportOption = FormationListOption;
 
 type Props = {
-  options: FormationExportOption[];
+  options: FormationListOption[];
 };
 
 export function ExportFormationJsonPanel({ options }: Props) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-
-  const selectedSet = new Set(selectedIds.map((x) => x.trim()).filter(Boolean));
 
   function toggle(id: string, checked: boolean) {
     const trimmed = id.trim();
@@ -59,32 +59,14 @@ export function ExportFormationJsonPanel({ options }: Props) {
 
   return (
     <div className="flex max-w-[92vw] flex-col gap-4">
-      <fieldset className="flex flex-col gap-2 text-sm">
-        <legend className="font-medium text-slate-800">
-          Formations à inclure dans l&apos;export
-        </legend>
-        <p className="text-xs text-slate-500">
-          Cochez une ou plusieurs formations. Le fichier JSON contient les documents
-          bruts des formations sélectionnées, plus les matières et professeurs
-          référencés dans leurs lignes.
-        </p>
-        <ul className="max-h-[min(40vh,22rem)] space-y-2 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/80 p-3">
-          {options.map((o) => (
-            <li key={o.id}>
-              <label className="flex cursor-pointer items-start gap-2 text-slate-800">
-                <input
-                  type="checkbox"
-                  checked={selectedSet.has(o.id)}
-                  disabled={isPending}
-                  onChange={(e) => toggle(o.id, e.target.checked)}
-                  className="mt-1 accent-indigo-600 disabled:opacity-50"
-                />
-                <span>{o.label}</span>
-              </label>
-            </li>
-          ))}
-        </ul>
-      </fieldset>
+      <FormationCheckboxList
+        options={options}
+        selectedIds={selectedIds}
+        onToggle={toggle}
+        disabled={isPending}
+        legend="Formations à inclure dans l'export"
+        description="Cochez une ou plusieurs formations. Le fichier JSON contient les documents bruts des formations sélectionnées, plus les matières et professeurs référencés dans leurs lignes."
+      />
 
       {error ? (
         <p

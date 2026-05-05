@@ -5,7 +5,9 @@ import type { MatiereOption } from "@/components/administration/ProfesseurMatier
 import {
   CONTRAINTE_MAX_COUNT,
   MAX_COURS_PAR_JOUR,
+  MAX_CRENEAUX_PAR_CONTRAINTE,
   MAX_HEURES_CONSECUTIVES,
+  type CreneauInterditWire,
   type ProfesseurContrainteKind,
   type ProfesseurContrainteWire,
 } from "@/lib/professeurContraintes.shared";
@@ -24,6 +26,10 @@ const JOURS: { value: number; label: string }[] = [
 
 const KIND_OPTIONS: { value: ProfesseurContrainteKind; label: string }[] = [
   { value: "jours_travail", label: "Jours de travail" },
+  {
+    value: "creneaux_interdits",
+    label: "Créneaux interdits (par jour / heures)",
+  },
   {
     value: "bloc_consecutif_matiere",
     label: "Heures consécutives (par matière)",
@@ -115,30 +121,8 @@ function isVolumeKindSelectable(
 }
 
 function canAddAnotherRow(rows: Row[], matiereChoices: MatiereOption[]): boolean {
-  if (!rows.some((r) => r.data.kind === "jours_travail")) {
-    return true;
-  }
-  if (
-    firstFreeMatiereIdForKind(
-      rows,
-      null,
-      "bloc_consecutif_matiere",
-      matiereChoices
-    ) !== ""
-  ) {
-    return true;
-  }
-  if (
-    firstFreeMatiereIdForKind(
-      rows,
-      null,
-      "volume_jour_matiere",
-      matiereChoices
-    ) !== ""
-  ) {
-    return true;
-  }
-  return false;
+  void matiereChoices;
+  return rows.length < CONTRAINTE_MAX_COUNT;
 }
 
 function pickKindForNewRow(
@@ -168,7 +152,7 @@ function pickKindForNewRow(
   ) {
     return "volume_jour_matiere";
   }
-  return "jours_travail";
+  return "creneaux_interdits";
 }
 
 function isMatiereOptionTakenByOtherRow(
@@ -217,6 +201,13 @@ function newContrainte(
         actif: true,
         matiereId: defaultMatiereId,
         maxCoursParJour: 2,
+      };
+    case "creneaux_interdits":
+      return {
+        kind,
+        priorite: 25,
+        actif: true,
+        creneaux: [{ jour: 3, heureDebut: 12, heureFin: 13 }],
       };
   }
 }
@@ -439,6 +430,20 @@ export function ProfesseurContraintesEditor({
     []
   );
 
+  const patchCreneauxRow = useCallback(
+    (key: string, creneaux: CreneauInterditWire[]) => {
+      setRows((prev) =>
+        prev.map((r) => {
+          if (r.key !== key || r.data.kind !== "creneaux_interdits") {
+            return r;
+          }
+          return { key, data: { ...r.data, creneaux } };
+        })
+      );
+    },
+    []
+  );
+
   return (
     <div
       role="group"
@@ -456,7 +461,8 @@ export function ProfesseurContraintesEditor({
         Plusieurs contraintes peuvent être actives en même temps. Règles : au plus
         une ligne « Jours de travail », et pour chaque matière au plus une ligne
         « Heures consécutives » et une ligne « Cours par jour ». Les types ou
-        matières déjà pris sont grisés dans les listes.
+        matières déjà pris sont grisés dans les listes. Les « Créneaux interdits »
+        peuvent être ajoutés en plusieurs lignes (fenêtres cumulées).
       </p>
       <div
         className={
@@ -499,7 +505,7 @@ export function ProfesseurContraintesEditor({
                         entry.key,
                         matiereChoices
                       );
-                    } else {
+                    } else if (o.value === "volume_jour_matiere") {
                       dis = !isVolumeKindSelectable(
                         rowsForUi,
                         entry.key,
@@ -529,14 +535,7 @@ export function ProfesseurContraintesEditor({
                   onChange={(e) => {
                     const v = Number(e.target.value);
                     const p = Number.isFinite(v) ? Math.trunc(v) : 0;
-                    const d = entry.data;
-                    if (d.kind === "jours_travail") {
-                      updateRow(entry.key, { ...d, priorite: p });
-                    } else if (d.kind === "bloc_consecutif_matiere") {
-                      updateRow(entry.key, { ...d, priorite: p });
-                    } else {
-                      updateRow(entry.key, { ...d, priorite: p });
-                    }
+                    updateRow(entry.key, { ...entry.data, priorite: p });
                   }}
                   className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/30"
                 />
@@ -546,14 +545,10 @@ export function ProfesseurContraintesEditor({
                   type="checkbox"
                   checked={entry.data.actif}
                   onChange={(e) => {
-                    const d = entry.data;
-                    if (d.kind === "jours_travail") {
-                      updateRow(entry.key, { ...d, actif: e.target.checked });
-                    } else if (d.kind === "bloc_consecutif_matiere") {
-                      updateRow(entry.key, { ...d, actif: e.target.checked });
-                    } else {
-                      updateRow(entry.key, { ...d, actif: e.target.checked });
-                    }
+                    updateRow(entry.key, {
+                      ...entry.data,
+                      actif: e.target.checked,
+                    });
                   }}
                   className="accent-indigo-600"
                 />
@@ -729,6 +724,137 @@ export function ProfesseurContraintesEditor({
                     className="w-[min(28vw,5rem)] rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/30"
                   />
                 </label>
+              </div>
+            ) : null}
+
+            {entry.data.kind === "creneaux_interdits" ? (
+              <div className="space-y-2 pt-1">
+                <p className="text-xs text-slate-600">
+                  Fenêtres horaires interdites pour ce professeur (fin exclusive,
+                  comme la grille planning). Plusieurs lignes « Créneaux interdits »
+                  se cumulent.
+                </p>
+                {entry.data.creneaux.map((cr, idx) => (
+                  <div
+                    key={`${entry.key}-cr-${idx}`}
+                    className="flex flex-wrap items-end gap-2 rounded-lg border border-slate-200/80 bg-white/60 p-2"
+                  >
+                    <label className="flex flex-col gap-1">
+                      <span className="text-xs font-medium text-slate-600">
+                        Jour
+                      </span>
+                      <select
+                        value={cr.jour}
+                        onChange={(e) => {
+                          const d = entry.data;
+                          if (d.kind !== "creneaux_interdits") return;
+                          const next = [...d.creneaux];
+                          next[idx] = {
+                            ...cr,
+                            jour: Number(e.target.value),
+                          };
+                          patchCreneauxRow(entry.key, next);
+                        }}
+                        className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/30"
+                      >
+                        {JOURS.map((j) => (
+                          <option key={j.value} value={j.value}>
+                            {j.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-xs font-medium text-slate-600">
+                        Début (h)
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={23}
+                        value={cr.heureDebut}
+                        onChange={(e) => {
+                          const d = entry.data;
+                          if (d.kind !== "creneaux_interdits") return;
+                          const v = Number(e.target.value);
+                          const next = [...d.creneaux];
+                          next[idx] = {
+                            ...cr,
+                            heureDebut: Number.isFinite(v)
+                              ? Math.trunc(v)
+                              : 0,
+                          };
+                          patchCreneauxRow(entry.key, next);
+                        }}
+                        className="w-[min(22vw,4.5rem)] rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/30"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-xs font-medium text-slate-600">
+                        Fin (h, excl.)
+                      </span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={24}
+                        value={cr.heureFin}
+                        onChange={(e) => {
+                          const d = entry.data;
+                          if (d.kind !== "creneaux_interdits") return;
+                          const v = Number(e.target.value);
+                          const next = [...d.creneaux];
+                          next[idx] = {
+                            ...cr,
+                            heureFin: Number.isFinite(v)
+                              ? Math.trunc(v)
+                              : 1,
+                          };
+                          patchCreneauxRow(entry.key, next);
+                        }}
+                        className="w-[min(26vw,5rem)] rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/30"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={
+                        entry.data.kind !== "creneaux_interdits" ||
+                        entry.data.creneaux.length <= 1
+                      }
+                      onClick={() => {
+                        const d = entry.data;
+                        if (d.kind !== "creneaux_interdits") return;
+                        if (d.creneaux.length <= 1) return;
+                        patchCreneauxRow(
+                          entry.key,
+                          d.creneaux.filter((_, i) => i !== idx)
+                        );
+                      }}
+                      className="rounded-lg border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-40"
+                    >
+                      Retirer
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  disabled={
+                    entry.data.creneaux.length >= MAX_CRENEAUX_PAR_CONTRAINTE
+                  }
+                  onClick={() => {
+                    const d = entry.data;
+                    if (d.kind !== "creneaux_interdits") return;
+                    if (d.creneaux.length >= MAX_CRENEAUX_PAR_CONTRAINTE) {
+                      return;
+                    }
+                    patchCreneauxRow(entry.key, [
+                      ...d.creneaux,
+                      { jour: 1, heureDebut: 12, heureFin: 13 },
+                    ]);
+                  }}
+                  className="rounded-lg border border-indigo-200 px-2 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+                >
+                  Ajouter une fenêtre
+                </button>
               </div>
             ) : null}
           </div>

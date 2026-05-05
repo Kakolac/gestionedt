@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
   CreerFormationModal,
   type MatiereOptionCourte,
@@ -18,20 +18,6 @@ type Props = {
   professeurOptions: ProfesseurOption[];
 };
 
-function matiereIdsUtilisesAilleurs(rows: FormationRow[], excludeId: string | null): string[] {
-  const s = new Set<string>();
-  for (const r of rows) {
-    if (excludeId != null && r.id === excludeId) {
-      continue;
-    }
-    for (const mid of r.matiereIds) {
-      const t = mid.trim();
-      if (t) s.add(t);
-    }
-  }
-  return [...s];
-}
-
 export function GestionFormationPanel({
   rows,
   matiereDisponiblesPourCreation,
@@ -46,13 +32,6 @@ export function GestionFormationPanel({
     id: string;
     formationLabel: string;
   } | null>(null);
-
-  const matiereIdsReserveesAilleurs = useMemo(() => {
-    if (editRow == null) {
-      return [];
-    }
-    return matiereIdsUtilisesAilleurs(rows, editRow.id);
-  }, [editRow, rows]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -184,7 +163,6 @@ export function GestionFormationPanel({
         onClose={() => setEditRow(null)}
         row={editRow}
         toutesLesMatieres={toutesLesMatieres}
-        matiereIdsReserveesAilleurs={matiereIdsReserveesAilleurs}
         professeurOptions={professeurOptions}
       />
 

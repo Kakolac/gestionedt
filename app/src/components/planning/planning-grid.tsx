@@ -1,0 +1,432 @@
+"use client";
+
+import { Fragment, useMemo } from "react";
+import type {
+  PlanningData,
+  PlanningGridConfig,
+  PlanningSession,
+} from "@/lib/planning/planning.types";
+import { nombreSemainesGrid, slotSemaine } from "@/lib/planning/planning-slot";
+
+export type PlanningGridProps = {
+  planningData: PlanningData;
+  grid: PlanningGridConfig;
+  /** Semaine 1-based à afficher lorsque `grid.nombreSemaines` &gt; 1. */
+  semaineAffichee?: number;
+};
+
+const JOUR_LABEL: Record<number, string> = {
+  1: "Lundi",
+  2: "Mardi",
+  3: "Mercredi",
+  4: "Jeudi",
+  5: "Vendredi",
+  6: "Samedi",
+  7: "Dimanche",
+};
+
+/** Bloc vertical : heures consécutives même formation + matière + prof (plusieurs séances fusionnées). */
+export type VerticalMergedBlock = {
+  startHour: number;
+  endHour: number;
+  formationId: string;
+  matiereId: string;
+  professeurId: string;
+  sessions: PlanningSession[];
+};
+
+/**
+ * Couleurs des tuiles cours : cycle emerald → teal → cyan → sky → violet → rose
+ * (plus contrastées que l’en-tête indigo/fuchsia de la page).
+ */
+const TILE_HUES = [158, 172, 188, 201, 265, 332, 142, 24] as const;
+
+function formationAccent(formationId: string): {
+  border: string;
+  background: string;
+  labelColor: string;
+  matiereColor: string;
+  badgeSurface: string;
+  badgeText: string;
+  badgeRing: string;
+} {
+  let n = 0;
+  for (let i = 0; i < formationId.length; i += 1) {
+    n = (n * 31 + formationId.charCodeAt(i)) >>> 0;
+  }
+  const h = TILE_HUES[n % TILE_HUES.length];
+  const h2 = TILE_HUES[(n + 4) % TILE_HUES.length];
+  return {
+    border: `hsl(${h} 52% 36%)`,
+    background: `linear-gradient(160deg, hsl(${h} 36% 92%) 0%, hsl(${h} 42% 88%) 40%, hsl(${h2} 30% 90%) 100%)`,
+    labelColor: `hsl(${h} 48% 28%)`,
+    matiereColor: `hsl(${h} 40% 22%)`,
+    badgeSurface: `hsl(${h} 28% 97%)`,
+    badgeText: `hsl(${h} 42% 26%)`,
+    badgeRing: `hsl(${h} 32% 78%)`,
+  };
+}
+
+function formationSortLabel(planningData: PlanningData, formationId: string): string {
+  const d = planningData.demands.find((x) => x.formationId === formationId);
+  if (d?.formationNom?.trim()) return d.formationNom.trim().toLowerCase();
+  const f = planningData.references.formations.find((x) => x.id === formationId);
+  return (f?.nom ?? formationId).trim().toLowerCase();
+}
+
+/**
+ * Regroupe les séances planifiées d’un même jour lorsque la fin d’un bloc coïncide
+ * avec le début du suivant et que formation + matière + professeur sont identiques.
+ * À heure identique, ordre stable par **nom de formation** (pas par ObjectId) pour les colonnes parallèles.
+ */
+export function buildVerticalMergedBlocks(
+  planningData: PlanningData,
+  sessions: readonly PlanningSession[],
+  jour: number
+): VerticalMergedBlock[] {
+  const list = sessions
+    .filter(
+      (s) =>
+        s.statut === "scheduled" &&
+        s.assignedSlot != null &&
+        s.assignedSlot.jour === jour
+    )
+    .slice()
+    .sort((a, b) => {
+      const da = a.assignedSlot!.heureDebut - b.assignedSlot!.heureDebut;
+      if (da !== 0) return da;
+      const fa = formationSortLabel(planningData, a.formationId);
+      const fb = formationSortLabel(planningData, b.formationId);
+      const dn = fa.localeCompare(fb, "fr", { sensitivity: "base" });
+      if (dn !== 0) return dn;
+      return a.id.localeCompare(b.id);
+    });
+
+  const out: VerticalMergedBlock[] = [];
+  for (const s of list) {
+    const sl = s.assignedSlot!;
+    const last = out[out.length - 1];
+    const sameKey =
+      last != null &&
+      last.formationId === s.formationId &&
+      last.matiereId === s.matiereId &&
+      last.professeurId === s.professeurId;
+    const contiguous = last != null && last.endHour === sl.heureDebut;
+    if (last != null && sameKey && contiguous) {
+      last.endHour = sl.heureFin;
+      last.sessions.push(s);
+    } else {
+      out.push({
+        startHour: sl.heureDebut,
+        endHour: sl.heureFin,
+        formationId: s.formationId,
+        matiereId: s.matiereId,
+        professeurId: s.professeurId,
+        sessions: [s],
+      });
+    }
+  }
+  return out;
+}
+
+function blocksCoveringHour(
+  blocks: readonly VerticalMergedBlock[],
+  heure: number
+): VerticalMergedBlock[] {
+  return blocks.filter((b) => heure >= b.startHour && heure < b.endHour);
+}
+
+function MergedBlockCard({
+  block,
+  planningData,
+}: {
+  block: VerticalMergedBlock;
+  planningData: PlanningData;
+}) {
+  const first = block.sessions[0];
+  const d = planningData.demands.find((x) => x.id === first.demandId);
+  const accent = formationAccent(block.formationId);
+  const totalHeures = block.endHour - block.startHour;
+  const creneau = `${block.startHour}h – ${block.endHour}h`;
+  const nbSeances = block.sessions.length;
+
+  const salles = [
+    ...new Set(
+      block.sessions
+        .map((x) => x.assignedSalleId)
+        .filter((x): x is string => x != null)
+    ),
+  ];
+  const salleLabel =
+    salles.length === 0
+      ? null
+      : salles.length === 1
+        ? `Salle …${salles[0].slice(-6)}`
+        : `${salles.length} salles`;
+
+  if (!d) {
+    return (
+      <div className="flex h-full min-h-0 flex-col justify-center rounded-lg border border-indigo-200/80 bg-indigo-50/60 px-2 py-2 text-[0.875rem] text-indigo-800">
+        Bloc ({creneau}) — données incomplètes
+      </div>
+    );
+  }
+
+  const titleFull = [
+    d.formationNom,
+    d.matiereNom,
+    d.professeurNom,
+    creneau,
+    `${totalHeures} h`,
+    salleLabel,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <article
+      className="flex h-full min-h-0 min-w-0 flex-col justify-center rounded-xl border border-slate-200/70 py-2 pl-3 pr-2 shadow-[0_8px_22px_rgba(15,23,42,0.08)]"
+      style={{
+        borderLeftWidth: 4,
+        borderLeftColor: accent.border,
+        background: accent.background,
+      }}
+      title={titleFull}
+    >
+      <p
+        className="text-[clamp(0.68rem,0.95vw,0.78rem)] font-semibold uppercase tracking-[0.12em]"
+        style={{ color: accent.labelColor }}
+      >
+        {creneau}
+        {nbSeances > 1 ? (
+          <span
+            className="ml-1.5 font-normal normal-case tracking-normal opacity-90"
+            style={{ color: accent.matiereColor }}
+          >
+            · {nbSeances} créneaux
+          </span>
+        ) : null}
+      </p>
+      <h3 className="mt-1 text-[clamp(0.8rem,1.15vw,0.95rem)] font-semibold leading-tight text-slate-900 line-clamp-2">
+        {d.formationNom}
+      </h3>
+      <p
+        className="mt-1.5 text-[clamp(0.85rem,1.25vw,1rem)] font-medium leading-snug"
+        style={{ color: accent.matiereColor }}
+      >
+        {d.matiereNom}
+      </p>
+      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[clamp(0.72rem,1vw,0.82rem)] text-slate-700">
+        <span className="font-medium text-slate-800">{d.professeurNom}</span>
+        <span
+          className="rounded-md px-1.5 py-0.5 tabular-nums font-medium shadow-sm"
+          style={{
+            backgroundColor: accent.badgeSurface,
+            color: accent.badgeText,
+            boxShadow: "0 1px 0 rgba(255,255,255,0.6) inset",
+            border: `1px solid ${accent.badgeRing}`,
+          }}
+        >
+          {totalHeures} h
+        </span>
+        {salleLabel != null ? (
+          <span className="rounded-md bg-white/90 px-1.5 py-0.5 font-medium text-slate-700 ring-1 ring-slate-200/90">
+            {salleLabel}
+          </span>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+/** Plusieurs cours **même début** (ex. formation A & B en parallèle 10h–12h) : colonnes égales, pleine hauteur du `grid-row` fusionné. */
+function StackedStartBlocks({
+  blocks,
+  planningData,
+}: {
+  blocks: VerticalMergedBlock[];
+  planningData: PlanningData;
+}) {
+  const n = blocks.length;
+  return (
+    <div
+      className="grid h-full min-h-0 w-full gap-[1vw] p-[1vw]"
+      style={{
+        gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))`,
+      }}
+    >
+      {blocks.map((b) => (
+        <div
+          key={`${b.startHour}-${b.formationId}-${b.sessions[0].id}`}
+          className="flex min-h-0 min-w-0 flex-col"
+        >
+          <MergedBlockCard block={b} planningData={planningData} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Grille jour × heure avec blocs verticaux : heures d’affilée même prof + même classe
+ * (formation / matière / prof) sont une seule carte `grid-row` étendue.
+ */
+export function PlanningGrid({
+  planningData,
+  grid,
+  semaineAffichee = 1,
+}: PlanningGridProps) {
+  const semaineVue = Math.min(
+    nombreSemainesGrid(grid),
+    Math.max(1, Math.floor(semaineAffichee) || 1)
+  );
+
+  const sessionsPourSemaine = useMemo(() => {
+    return planningData.sessions.filter((s) => {
+      if (s.statut !== "scheduled" || s.assignedSlot == null) return false;
+      return slotSemaine(s.assignedSlot) === semaineVue;
+    });
+  }, [planningData.sessions, semaineVue]);
+
+  const heures = useMemo(() => {
+    const h: number[] = [];
+    for (let x = grid.heureDebut; x < grid.heureFin; x += 1) {
+      h.push(x);
+    }
+    return h;
+  }, [grid.heureDebut, grid.heureFin]);
+
+  const blocksByJour = useMemo(() => {
+    const m = new Map<number, VerticalMergedBlock[]>();
+    for (const jour of grid.joursSemaine) {
+      m.set(jour, buildVerticalMergedBlocks(planningData, sessionsPourSemaine, jour));
+    }
+    return m;
+  }, [sessionsPourSemaine, grid.joursSemaine, planningData]);
+
+  const colCount = grid.joursSemaine.length;
+  const rowCount = heures.length;
+  const gridTemplateRows = `auto repeat(${rowCount}, minmax(6rem, auto))`;
+
+  return (
+    <div
+      className="w-full overflow-x-auto rounded-2xl border border-indigo-200/60 bg-gradient-to-br from-white via-indigo-50/30 to-sky-50/40 shadow-[0_12px_40px_rgba(49,46,129,0.1)]"
+      style={{ minHeight: "min(72vh, 56rem)" }}
+    >
+      <div
+        aria-label={
+          nombreSemainesGrid(grid) > 1
+            ? `Planning semaine ${semaineVue}`
+            : "Planning hebdomadaire"
+        }
+        className="grid min-w-[min(100%,70rem)] gap-px bg-indigo-200/40 text-slate-900"
+        style={{
+          gridTemplateColumns: `minmax(3.5rem, 4.5vw) repeat(${colCount}, minmax(12.5rem, 1fr))`,
+          gridTemplateRows,
+        }}
+      >
+        <div className="sticky left-0 z-20 flex items-center justify-center bg-gradient-to-br from-indigo-100/95 via-indigo-50/90 to-sky-100/70 px-2 py-3 text-center text-[clamp(0.7rem,1vw,0.8rem)] font-bold uppercase tracking-[0.12em] text-indigo-800/90">
+          Heure
+        </div>
+        {grid.joursSemaine.map((j) => (
+          <div
+            key={j}
+            className="flex items-center justify-center bg-gradient-to-br from-indigo-50/95 via-white to-sky-50/80 px-2 py-3 text-center text-[clamp(0.8rem,1.15vw,0.95rem)] font-bold text-indigo-950"
+          >
+            {JOUR_LABEL[j] ?? `Jour ${j}`}
+          </div>
+        ))}
+
+        {heures.map((h, i) => (
+          <Fragment key={h}>
+            <div
+              className="sticky left-0 z-10 flex min-h-[6rem] items-center justify-end border-r border-indigo-100/90 bg-gradient-to-r from-indigo-50/95 to-white/90 px-2 text-[clamp(0.8rem,1.1vw,0.95rem)] font-semibold tabular-nums text-indigo-900"
+              style={{ gridColumn: 1, gridRow: 2 + i }}
+            >
+              {h}h
+            </div>
+            {grid.joursSemaine.map((jour, di) => {
+              const blocks = blocksByJour.get(jour) ?? [];
+              const covering = blocksCoveringHour(blocks, h);
+              const isContinuation = covering.some((b) => b.startHour < h);
+              if (isContinuation) {
+                return null;
+              }
+              const startsHere = covering.filter((b) => b.startHour === h);
+              /** Ordre gauche→droite des colonnes parallèles : nom formation (fr), pas ObjectId. */
+              const orderedStarts =
+                startsHere.length <= 1
+                  ? startsHere
+                  : [...startsHere].sort((a, b) => {
+                      const nf = formationSortLabel(
+                        planningData,
+                        a.formationId
+                      ).localeCompare(
+                        formationSortLabel(planningData, b.formationId),
+                        "fr",
+                        { sensitivity: "base" }
+                      );
+                      if (nf !== 0) return nf;
+                      return a.matiereId.localeCompare(b.matiereId);
+                    });
+              const col = 2 + di;
+              const rowLine = 2 + i;
+
+              if (orderedStarts.length === 0) {
+                return (
+                  <div
+                    key={`${jour}-${h}-libre`}
+                    className="flex min-h-[6rem] items-center justify-center border-l border-indigo-50/80 bg-gradient-to-br from-sky-50/50 via-white to-indigo-50/25 p-2 text-[clamp(0.75rem,1vw,0.85rem)] font-medium text-sky-700/45"
+                    style={{ gridColumn: col, gridRow: rowLine }}
+                  >
+                    Libre
+                  </div>
+                );
+              }
+
+              if (orderedStarts.length === 1) {
+                const b = orderedStarts[0];
+                const span = b.endHour - b.startHour;
+                const rowEnd = rowLine + span;
+                return (
+                  <div
+                    key={`${jour}-${b.startHour}-${b.sessions[0].id}`}
+                    className="flex min-h-0 h-full flex-col border-l border-indigo-100/70 bg-gradient-to-b from-white/98 to-indigo-50/20 p-2"
+                    style={{
+                      gridColumn: col,
+                      gridRow: `${rowLine} / ${rowEnd}`,
+                    }}
+                  >
+                    <MergedBlockCard block={b} planningData={planningData} />
+                  </div>
+                );
+              }
+
+              const maxParallelSpan = Math.max(
+                1,
+                ...orderedStarts.map((b) => b.endHour - b.startHour)
+              );
+              const parallelRowEnd = rowLine + maxParallelSpan;
+
+              return (
+                <div
+                  key={`${jour}-${h}-stack`}
+                  className="flex min-h-0 h-full flex-col border-l border-indigo-100/70 bg-gradient-to-b from-white/98 to-sky-50/15"
+                  style={{
+                    gridColumn: col,
+                    gridRow: `${rowLine} / ${parallelRowEnd}`,
+                  }}
+                >
+                  <StackedStartBlocks
+                    blocks={orderedStarts}
+                    planningData={planningData}
+                  />
+                </div>
+              );
+            })}
+          </Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}

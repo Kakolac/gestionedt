@@ -132,6 +132,13 @@ export const ROUTE_MATRIX_ROWS = [
       "Rôle création_formation ; fiches matière + professeurs + heures.",
   },
   {
+    permissionKey: PERMISSION_CREATION_FORMATION,
+    routeLabel: "Planning formation (aperçu)",
+    routePath: "/administration/planning-formation",
+    scopeNote:
+      "Données réelles d’une formation ; même permission que création / export JSON ; tuile hub.planning_formation.",
+  },
+  {
     permissionKey: PERMISSION_CREATION_SALLE,
     routeLabel: "Création de salle",
     routePath: "/administration/creation-salle",

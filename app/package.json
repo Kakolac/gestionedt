@@ -11,6 +11,7 @@
     "init:metier-roles": "tsx scripts/init/seed-metier-roles.ts",
     "migrate:role-slugs": "tsx scripts/init/migrate-user-role-slugs.ts",
     "migrate:hub-export-tile": "tsx scripts/init/migrate-hub-export-formation-tile.ts",
+    "migrate:hub-planning-tile": "tsx scripts/init/migrate-hub-planning-formation-tile.ts",
     "init:admin": "tsx scripts/init/create-admin.ts"
   },
   "dependencies": {

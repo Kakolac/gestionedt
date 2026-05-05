@@ -35,7 +35,7 @@ export function FormationMatieresChecklist({
         <legend className="font-medium text-slate-800">Matières du regroupement</legend>
         <p className="rounded-xl border border-amber-200 bg-amber-50/90 px-3 py-2 text-xs text-amber-900">
           {emptyOptionsHint ??
-            "Aucune matière disponible (toutes sont déjà dans une autre formation)."}
+            "Aucune matière dans le référentiel. Créez des matières ou vérifiez la base."}
         </p>
       </fieldset>
     );
@@ -45,8 +45,8 @@ export function FormationMatieresChecklist({
     <fieldset className="flex flex-col gap-2 text-sm">
       <legend className="font-medium text-slate-800">Matières du regroupement</legend>
       <p className="text-xs text-slate-500">
-        Cochez au moins une matière. Une même matière ne peut appartenir qu&apos;à une
-        seule formation.
+        Cochez au moins une matière. La même matière peut être utilisée dans plusieurs
+        formations (une seule fois par formation).
       </p>
       {selectedIds.map((id) => (
         <input key={id} type="hidden" name="matiereIds" value={id.trim()} />
