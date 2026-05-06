@@ -138,6 +138,91 @@ function overlapsProfCreneauxInterdits(
   return false;
 }
 
+/** Borne stricte sur `heureFin` du créneau pour ce jour (plusieurs lignes actives → minimum). */
+function effHeureFinMaxPourJour(
+  contraintes: readonly ProfesseurContrainteWire[],
+  jour: number
+): number | null {
+  let m: number | null = null;
+  for (const c of contraintes) {
+    if (!c.actif || c.kind !== "heure_fin_max_jour") continue;
+    if (c.jour !== jour) continue;
+    m = m === null ? c.heureFinMax : Math.min(m, c.heureFinMax);
+  }
+  return m;
+}
+
+function effVolumeHeuresJourMax(
+  contraintes: readonly ProfesseurContrainteWire[]
+): number | null {
+  const rel = contraintes.filter(
+    (
+      c
+    ): c is ProfesseurContrainteWire & { kind: "volume_heures_jour" } =>
+      c.actif && c.kind === "volume_heures_jour"
+  );
+  if (rel.length === 0) return null;
+  let m = rel[0].maxHeuresJour;
+  for (let i = 1; i < rel.length; i += 1) {
+    m = Math.min(m, rel[i].maxHeuresJour);
+  }
+  return m;
+}
+
+function effVolumeHeuresSemaineMax(
+  contraintes: readonly ProfesseurContrainteWire[]
+): number | null {
+  const rel = contraintes.filter(
+    (
+      c
+    ): c is ProfesseurContrainteWire & { kind: "volume_heures_semaine" } =>
+      c.actif && c.kind === "volume_heures_semaine"
+  );
+  if (rel.length === 0) return null;
+  let m = rel[0].maxHeuresSemaine;
+  for (let i = 1; i < rel.length; i += 1) {
+    m = Math.min(m, rel[i].maxHeuresSemaine);
+  }
+  return m;
+}
+
+/** Somme des `duree` (h) du prof pour ce jour ISO et cette semaine de grille — toutes matières, toutes formations. */
+function sumDureeProfJour(
+  placed: readonly PlanningSession[],
+  profId: string,
+  semaine: number,
+  jour: number
+): number {
+  let s = 0;
+  for (const x of placed) {
+    if (x.statut !== "scheduled" || x.assignedSlot == null) continue;
+    if (x.professeurId !== profId) continue;
+    if (
+      slotSemaine(x.assignedSlot) !== semaine ||
+      x.assignedSlot.jour !== jour
+    ) {
+      continue;
+    }
+    s += x.duree;
+  }
+  return s;
+}
+
+function sumDureeProfSemaine(
+  placed: readonly PlanningSession[],
+  profId: string,
+  semaine: number
+): number {
+  let s = 0;
+  for (const x of placed) {
+    if (x.statut !== "scheduled" || x.assignedSlot == null) continue;
+    if (x.professeurId !== profId) continue;
+    if (slotSemaine(x.assignedSlot) !== semaine) continue;
+    s += x.duree;
+  }
+  return s;
+}
+
 function effVolumeJourMax(demand: PlanningDemand): number | null {
   const rel = demand.contraintesProfesseur.filter(
     (c): c is ProfesseurContrainteWire & { kind: "volume_jour_matiere" } =>
@@ -299,6 +384,14 @@ function canPlaceSession(
     return false;
   }
 
+  const finMaxJour = effHeureFinMaxPourJour(
+    demand.contraintesProfesseur,
+    slot.jour
+  );
+  if (finMaxJour !== null && slot.heureFin > finMaxJour) {
+    return false;
+  }
+
   if (demand.salleMode === "liste") {
     const sid = trial.assignedSalleId;
     if (sid == null) return false;
@@ -366,6 +459,23 @@ function canPlaceSession(
     if (streak > bmax) return false;
   }
 
+  const vmaxHjour = effVolumeHeuresJourMax(demand.contraintesProfesseur);
+  if (vmaxHjour !== null) {
+    const sw = slotSemaine(slot);
+    const totalJour =
+      sumDureeProfJour(placed, trial.professeurId, sw, slot.jour) +
+      trial.duree;
+    if (totalJour > vmaxHjour) return false;
+  }
+
+  const vmaxHsem = effVolumeHeuresSemaineMax(demand.contraintesProfesseur);
+  if (vmaxHsem !== null) {
+    const sw = slotSemaine(slot);
+    const totalSem =
+      sumDureeProfSemaine(placed, trial.professeurId, sw) + trial.duree;
+    if (totalSem > vmaxHsem) return false;
+  }
+
   return true;
 }
 
@@ -389,6 +499,15 @@ export function scoreSessionContrainte(
   for (const c of demand.contraintesProfesseur) {
     if (c.actif && c.kind === "creneaux_interdits") {
       score += Math.min(50, c.creneaux.length * 4);
+    }
+    if (c.actif && c.kind === "heure_fin_max_jour") {
+      score += 6;
+    }
+    if (c.actif && c.kind === "volume_heures_jour") {
+      score += 8;
+    }
+    if (c.actif && c.kind === "volume_heures_semaine") {
+      score += 8;
     }
   }
   const jours = joursAutorisesJoursTravail(demand.contraintesProfesseur);

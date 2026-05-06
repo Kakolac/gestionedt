@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo } from "react";
+import { Fragment, useMemo, type MouseEvent } from "react";
 import type {
   PlanningData,
   PlanningGridConfig,
@@ -13,6 +13,10 @@ export type PlanningGridProps = {
   grid: PlanningGridConfig;
   /** Semaine 1-based à afficher lorsque `grid.nombreSemaines` &gt; 1. */
   semaineAffichee?: number;
+  /** Ids des séances du bloc actuellement sélectionné pour un échange manuel. */
+  highlightSessionIds?: ReadonlySet<string>;
+  /** Clic droit sur un bloc (carte fusionnée). */
+  onBlockContextMenu?: (event: MouseEvent, block: VerticalMergedBlock) => void;
 };
 
 const JOUR_LABEL: Record<number, string> = {
@@ -136,12 +140,24 @@ function blocksCoveringHour(
   return blocks.filter((b) => heure >= b.startHour && heure < b.endHour);
 }
 
+function blockIsHighlighted(
+  block: VerticalMergedBlock,
+  highlightSessionIds: ReadonlySet<string> | undefined
+): boolean {
+  if (highlightSessionIds == null || highlightSessionIds.size === 0) return false;
+  return block.sessions.some((s) => highlightSessionIds.has(s.id));
+}
+
 function MergedBlockCard({
   block,
   planningData,
+  highlighted,
+  onContextMenu,
 }: {
   block: VerticalMergedBlock;
   planningData: PlanningData;
+  highlighted?: boolean;
+  onContextMenu?: (event: MouseEvent) => void;
 }) {
   const first = block.sessions[0];
   const d = planningData.demands.find((x) => x.id === first.demandId);
@@ -185,13 +201,25 @@ function MergedBlockCard({
 
   return (
     <article
-      className="flex h-full min-h-0 min-w-0 flex-col justify-center rounded-xl border border-slate-200/70 py-2 pl-3 pr-2 shadow-[0_8px_22px_rgba(15,23,42,0.08)]"
+      className={
+        highlighted
+          ? "flex h-full min-h-0 min-w-0 flex-col justify-center rounded-xl border border-indigo-400 py-2 pl-3 pr-2 shadow-[0_8px_22px_rgba(15,23,42,0.08)] ring-[3px] ring-indigo-500/85 ring-offset-2 ring-offset-white"
+          : "flex h-full min-h-0 min-w-0 flex-col justify-center rounded-xl border border-slate-200/70 py-2 pl-3 pr-2 shadow-[0_8px_22px_rgba(15,23,42,0.08)]"
+      }
       style={{
         borderLeftWidth: 4,
         borderLeftColor: accent.border,
         background: accent.background,
       }}
       title={titleFull}
+      onContextMenu={
+        onContextMenu != null
+          ? (e) => {
+              e.preventDefault();
+              onContextMenu(e);
+            }
+          : undefined
+      }
     >
       <p
         className="text-[clamp(0.68rem,0.95vw,0.78rem)] font-semibold uppercase tracking-[0.12em]"
@@ -243,9 +271,13 @@ function MergedBlockCard({
 function StackedStartBlocks({
   blocks,
   planningData,
+  highlightSessionIds,
+  onBlockContextMenu,
 }: {
   blocks: VerticalMergedBlock[];
   planningData: PlanningData;
+  highlightSessionIds?: ReadonlySet<string>;
+  onBlockContextMenu?: (event: MouseEvent, block: VerticalMergedBlock) => void;
 }) {
   const n = blocks.length;
   return (
@@ -260,7 +292,16 @@ function StackedStartBlocks({
           key={`${b.startHour}-${b.formationId}-${b.sessions[0].id}`}
           className="flex min-h-0 min-w-0 flex-col"
         >
-          <MergedBlockCard block={b} planningData={planningData} />
+          <MergedBlockCard
+            block={b}
+            planningData={planningData}
+            highlighted={blockIsHighlighted(b, highlightSessionIds)}
+            onContextMenu={
+              onBlockContextMenu != null
+                ? (e) => onBlockContextMenu(e, b)
+                : undefined
+            }
+          />
         </div>
       ))}
     </div>
@@ -275,6 +316,8 @@ export function PlanningGrid({
   planningData,
   grid,
   semaineAffichee = 1,
+  highlightSessionIds,
+  onBlockContextMenu,
 }: PlanningGridProps) {
   const semaineVue = Math.min(
     nombreSemainesGrid(grid),
@@ -397,7 +440,16 @@ export function PlanningGrid({
                       gridRow: `${rowLine} / ${rowEnd}`,
                     }}
                   >
-                    <MergedBlockCard block={b} planningData={planningData} />
+                    <MergedBlockCard
+                      block={b}
+                      planningData={planningData}
+                      highlighted={blockIsHighlighted(b, highlightSessionIds)}
+                      onContextMenu={
+                        onBlockContextMenu != null
+                          ? (e) => onBlockContextMenu(e, b)
+                          : undefined
+                      }
+                    />
                   </div>
                 );
               }
@@ -420,6 +472,8 @@ export function PlanningGrid({
                   <StackedStartBlocks
                     blocks={orderedStarts}
                     planningData={planningData}
+                    highlightSessionIds={highlightSessionIds}
+                    onBlockContextMenu={onBlockContextMenu}
                   />
                 </div>
               );

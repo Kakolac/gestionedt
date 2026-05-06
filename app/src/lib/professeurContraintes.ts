@@ -4,6 +4,8 @@ import {
   MAX_COURS_PAR_JOUR,
   MAX_CRENEAUX_PAR_CONTRAINTE,
   MAX_HEURES_CONSECUTIVES,
+  MAX_HEURES_PLAFOND_JOUR,
+  MAX_HEURES_PLAFOND_SEMAINE,
   canonObjectIdKey,
   isLikelyMongoObjectId,
   isProfesseurContrainteKind,
@@ -22,6 +24,8 @@ export {
   MAX_COURS_PAR_JOUR,
   MAX_CRENEAUX_PAR_CONTRAINTE,
   MAX_HEURES_CONSECUTIVES,
+  MAX_HEURES_PLAFOND_JOUR,
+  MAX_HEURES_PLAFOND_SEMAINE,
   PROFESSEUR_CONTRAINTE_KINDS,
 } from "@/lib/professeurContraintes.shared";
 
@@ -34,6 +38,10 @@ export type ProfesseurContrainteMongo = {
   matiereId?: mongoose.Types.ObjectId;
   maxHeuresConsecutives?: number;
   maxCoursParJour?: number;
+  jour?: number;
+  heureFinMax?: number;
+  maxHeuresJour?: number;
+  maxHeuresSemaine?: number;
 };
 
 /**
@@ -75,8 +83,11 @@ export function parseContraintesJsonForSave(
   const out: ProfesseurContrainteMongo[] = [];
 
   let countJoursTravail = 0;
+  let countVolumeHeuresJour = 0;
+  let countVolumeHeuresSemaine = 0;
   const blocMatieres = new Set<string>();
   const volumeMatieres = new Set<string>();
+  const joursHeureFinMax = new Set<number>();
 
   for (let i = 0; i < parsed.length; i += 1) {
     const entry = parsed[i];
@@ -200,6 +211,104 @@ export function parseContraintesJsonForSave(
         priorite: pr,
         actif,
         creneaux,
+      });
+      continue;
+    }
+
+    if (kindRaw === "heure_fin_max_jour") {
+      const jourN = typeof o.jour === "number" ? o.jour : Number(o.jour);
+      const hfm =
+        typeof o.heureFinMax === "number"
+          ? o.heureFinMax
+          : Number(o.heureFinMax);
+      if (
+        !Number.isInteger(jourN) ||
+        jourN < 1 ||
+        jourN > 7 ||
+        !Number.isInteger(hfm) ||
+        hfm < 1 ||
+        hfm > 24
+      ) {
+        return {
+          ok: false,
+          error: `Contrainte #${i + 1} : jour 1–7 et heure de fin max entre 1 et 24.`,
+        };
+      }
+      if (joursHeureFinMax.has(jourN)) {
+        return {
+          ok: false,
+          error: `Contrainte #${i + 1} : au plus une ligne « Heure de fin max » par jour de la semaine (jour ${jourN} déjà défini).`,
+        };
+      }
+      joursHeureFinMax.add(jourN);
+      out.push({
+        kind: "heure_fin_max_jour",
+        priorite: pr,
+        actif,
+        jour: jourN,
+        heureFinMax: hfm,
+      });
+      continue;
+    }
+
+    if (kindRaw === "volume_heures_jour") {
+      countVolumeHeuresJour += 1;
+      if (countVolumeHeuresJour > 1) {
+        return {
+          ok: false,
+          error:
+            "Une seule contrainte « Max. heures / jour (total prof) » est autorisée.",
+        };
+      }
+      const mx = o.maxHeuresJour;
+      const n =
+        typeof mx === "number" ? mx : typeof mx === "string" ? Number(mx) : NaN;
+      if (
+        !Number.isInteger(n) ||
+        n < 1 ||
+        n > MAX_HEURES_PLAFOND_JOUR
+      ) {
+        return {
+          ok: false,
+          error: `Contrainte #${i + 1} : max. heures / jour entre 1 et ${MAX_HEURES_PLAFOND_JOUR}.`,
+        };
+      }
+      out.push({
+        kind: "volume_heures_jour",
+        priorite: pr,
+        actif,
+        maxHeuresJour: n,
+      });
+      continue;
+    }
+
+    if (kindRaw === "volume_heures_semaine") {
+      countVolumeHeuresSemaine += 1;
+      if (countVolumeHeuresSemaine > 1) {
+        return {
+          ok: false,
+          error:
+            "Une seule contrainte « Max. heures / semaine (total prof) » est autorisée.",
+        };
+      }
+      const mx = o.maxHeuresSemaine;
+      const n =
+        typeof mx === "number" ? mx : typeof mx === "string" ? Number(mx) : NaN;
+      if (
+        !Number.isInteger(n) ||
+        n < 1 ||
+        n > MAX_HEURES_PLAFOND_SEMAINE
+      ) {
+        return {
+          ok: false,
+          error: `Contrainte #${i + 1} : max. heures / semaine entre 1 et ${MAX_HEURES_PLAFOND_SEMAINE}.`,
+        };
+      }
+      out.push({
+        kind: "volume_heures_semaine",
+        priorite: pr,
+        actif,
+        maxHeuresSemaine: n,
       });
       continue;
     }
@@ -360,6 +469,62 @@ export function leanWireFromContraintesDoc(raw: unknown): ProfesseurContrainteWi
         priorite,
         actif,
         creneaux,
+      });
+      continue;
+    }
+
+    if (kind === "heure_fin_max_jour") {
+      const jourN = typeof o.jour === "number" ? o.jour : Number(o.jour);
+      const hfm =
+        typeof o.heureFinMax === "number"
+          ? o.heureFinMax
+          : Number(o.heureFinMax);
+      if (
+        !Number.isInteger(jourN) ||
+        jourN < 1 ||
+        jourN > 7 ||
+        !Number.isInteger(hfm) ||
+        hfm < 1 ||
+        hfm > 24
+      ) {
+        continue;
+      }
+      out.push({
+        kind: "heure_fin_max_jour",
+        priorite,
+        actif,
+        jour: jourN,
+        heureFinMax: hfm,
+      });
+      continue;
+    }
+
+    if (kind === "volume_heures_jour") {
+      const mx = o.maxHeuresJour;
+      const n = typeof mx === "number" ? mx : Number(mx);
+      if (!Number.isInteger(n) || n < 1) {
+        continue;
+      }
+      out.push({
+        kind: "volume_heures_jour",
+        priorite,
+        actif,
+        maxHeuresJour: n,
+      });
+      continue;
+    }
+
+    if (kind === "volume_heures_semaine") {
+      const mx = o.maxHeuresSemaine;
+      const n = typeof mx === "number" ? mx : Number(mx);
+      if (!Number.isInteger(n) || n < 1) {
+        continue;
+      }
+      out.push({
+        kind: "volume_heures_semaine",
+        priorite,
+        actif,
+        maxHeuresSemaine: n,
       });
       continue;
     }

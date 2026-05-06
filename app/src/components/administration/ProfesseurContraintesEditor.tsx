@@ -7,6 +7,8 @@ import {
   MAX_COURS_PAR_JOUR,
   MAX_CRENEAUX_PAR_CONTRAINTE,
   MAX_HEURES_CONSECUTIVES,
+  MAX_HEURES_PLAFOND_JOUR,
+  MAX_HEURES_PLAFOND_SEMAINE,
   type CreneauInterditWire,
   type ProfesseurContrainteKind,
   type ProfesseurContrainteWire,
@@ -29,6 +31,18 @@ const KIND_OPTIONS: { value: ProfesseurContrainteKind; label: string }[] = [
   {
     value: "creneaux_interdits",
     label: "Créneaux interdits (par jour / heures)",
+  },
+  {
+    value: "heure_fin_max_jour",
+    label: "Heure de fin max (un jour de la semaine)",
+  },
+  {
+    value: "volume_heures_jour",
+    label: "Max. heures / jour (total prof)",
+  },
+  {
+    value: "volume_heures_semaine",
+    label: "Max. heures / semaine (total prof)",
   },
   {
     value: "bloc_consecutif_matiere",
@@ -120,6 +134,71 @@ function isVolumeKindSelectable(
   );
 }
 
+function joursPrisHeureFinMax(
+  rows: Row[],
+  excludeKey: string | null
+): Set<number> {
+  const s = new Set<number>();
+  for (const r of rows) {
+    if (excludeKey !== null && r.key === excludeKey) {
+      continue;
+    }
+    if (r.data.kind === "heure_fin_max_jour") {
+      s.add(r.data.jour);
+    }
+  }
+  return s;
+}
+
+function firstFreeJourHeureFin(
+  rows: Row[],
+  excludeKey: string | null
+): number {
+  const taken = joursPrisHeureFinMax(rows, excludeKey);
+  for (const j of JOURS) {
+    if (!taken.has(j.value)) {
+      return j.value;
+    }
+  }
+  return 5;
+}
+
+function isHeureFinMaxKindSelectable(rows: Row[], rowKey: string): boolean {
+  return joursPrisHeureFinMax(rows, rowKey).size < 7;
+}
+
+function isVolumeHeuresJourSelectable(rows: Row[], rowKey: string): boolean {
+  return !rows.some(
+    (r) => r.key !== rowKey && r.data.kind === "volume_heures_jour"
+  );
+}
+
+function isVolumeHeuresSemaineSelectable(
+  rows: Row[],
+  rowKey: string
+): boolean {
+  return !rows.some(
+    (r) => r.key !== rowKey && r.data.kind === "volume_heures_semaine"
+  );
+}
+
+function isJourOptionTakenHeureFinMax(
+  rows: Row[],
+  rowKey: string,
+  jour: number,
+  currentJour: number
+): boolean {
+  if (jour === currentJour) {
+    return false;
+  }
+  return rows.some(
+    (r) =>
+      r.key !== rowKey &&
+      r.data.kind === "heure_fin_max_jour" &&
+      r.data.jour === jour
+  );
+}
+
 function canAddAnotherRow(rows: Row[], matiereChoices: MatiereOption[]): boolean {
   void matiereChoices;
   return rows.length < CONTRAINTE_MAX_COUNT;
@@ -152,6 +231,15 @@ function pickKindForNewRow(
   ) {
     return "volume_jour_matiere";
   }
+  if (!rows.some((r) => r.data.kind === "volume_heures_jour")) {
+    return "volume_heures_jour";
+  }
+  if (!rows.some((r) => r.data.kind === "volume_heures_semaine")) {
+    return "volume_heures_semaine";
+  }
+  if (joursPrisHeureFinMax(rows, null).size < 7) {
+    return "heure_fin_max_jour";
+  }
   return "creneaux_interdits";
 }
 
@@ -176,7 +264,8 @@ function isMatiereOptionTakenByOtherRow(
 
 function newContrainte(
   kind: ProfesseurContrainteKind,
-  defaultMatiereId: string
+  defaultMatiereId: string,
+  heureFinJour?: number
 ): ProfesseurContrainteWire {
   switch (kind) {
     case "jours_travail":
@@ -209,16 +298,39 @@ function newContrainte(
         actif: true,
         creneaux: [{ jour: 3, heureDebut: 12, heureFin: 13 }],
       };
+    case "heure_fin_max_jour":
+      return {
+        kind,
+        priorite: 22,
+        actif: true,
+        jour: heureFinJour ?? 5,
+        heureFinMax: 16,
+      };
+    case "volume_heures_jour":
+      return {
+        kind,
+        priorite: 23,
+        actif: true,
+        maxHeuresJour: 8,
+      };
+    case "volume_heures_semaine":
+      return {
+        kind,
+        priorite: 24,
+        actif: true,
+        maxHeuresSemaine: 35,
+      };
   }
 }
 
 function migrateKind(
   prev: ProfesseurContrainteWire,
   kind: ProfesseurContrainteKind,
-  defaultMatiereId: string
+  defaultMatiereId: string,
+  heureFinJour?: number
 ): ProfesseurContrainteWire {
   const { priorite, actif } = prev;
-  const base = newContrainte(kind, defaultMatiereId);
+  const base = newContrainte(kind, defaultMatiereId, heureFinJour);
   return { ...base, priorite, actif };
 }
 
@@ -347,11 +459,15 @@ export function ProfesseurContraintesEditor({
                 matiereChoices
               )
             : "";
+      const hJour =
+        kind === "heure_fin_max_jour"
+          ? firstFreeJourHeureFin(normalized, null)
+          : undefined;
       return [
         ...prev,
         {
           key: makeRowKey(),
-          data: newContrainte(kind, mid),
+          data: newContrainte(kind, mid, hJour),
         },
       ];
     });
@@ -396,9 +512,13 @@ export function ProfesseurContraintesEditor({
               matiereChoices[0]?.id ||
               "";
           }
+          const hJour =
+            kind === "heure_fin_max_jour"
+              ? firstFreeJourHeureFin(prev, key)
+              : undefined;
           return {
             key,
-            data: migrateKind(r.data, kind, mid),
+            data: migrateKind(r.data, kind, mid, hJour),
           };
         })
       );
@@ -459,10 +579,13 @@ export function ProfesseurContraintesEditor({
       <input type="hidden" name="contraintesJson" value={jsonPayload} readOnly />
       <p className="text-xs text-slate-500">
         Plusieurs contraintes peuvent être actives en même temps. Règles : au plus
-        une ligne « Jours de travail », et pour chaque matière au plus une ligne
-        « Heures consécutives » et une ligne « Cours par jour ». Les types ou
-        matières déjà pris sont grisés dans les listes. Les « Créneaux interdits »
-        peuvent être ajoutés en plusieurs lignes (fenêtres cumulées).
+        une ligne « Jours de travail », une « Max. heures / jour (total prof) » et
+        une « Max. heures / semaine (total prof) » ; pour chaque matière au plus une
+        ligne « Heures consécutives » et une « Cours par jour » ; au plus une ligne
+        « Heure de fin max » par jour de la semaine. Les « Créneaux interdits »
+        servent aussi à bloquer une plage récurrente (ex. indisponible lundi 9h–10h :
+        début 9, fin 10, fin exclusive comme sur la grille). Les types ou matières
+        déjà pris sont grisés dans les listes.
       </p>
       <div
         className={
@@ -510,6 +633,21 @@ export function ProfesseurContraintesEditor({
                         rowsForUi,
                         entry.key,
                         matiereChoices
+                      );
+                    } else if (o.value === "heure_fin_max_jour") {
+                      dis = !isHeureFinMaxKindSelectable(
+                        rowsForUi,
+                        entry.key
+                      );
+                    } else if (o.value === "volume_heures_jour") {
+                      dis = !isVolumeHeuresJourSelectable(
+                        rowsForUi,
+                        entry.key
+                      );
+                    } else if (o.value === "volume_heures_semaine") {
+                      dis = !isVolumeHeuresSemaineSelectable(
+                        rowsForUi,
+                        entry.key
                       );
                     }
                     if (entry.data.kind === o.value) {
@@ -727,12 +865,142 @@ export function ProfesseurContraintesEditor({
               </div>
             ) : null}
 
+            {entry.data.kind === "heure_fin_max_jour" ? (
+              <div className="flex flex-wrap gap-3 pt-1">
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-slate-600">
+                    Jour
+                  </span>
+                  <select
+                    value={entry.data.jour}
+                    onChange={(e) => {
+                      const d = entry.data;
+                      if (d.kind !== "heure_fin_max_jour") return;
+                      updateRow(entry.key, {
+                        ...d,
+                        jour: Number(e.target.value),
+                      });
+                    }}
+                    className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/30"
+                  >
+                    {JOURS.map((j) => {
+                      const dis = isJourOptionTakenHeureFinMax(
+                        rowsForUi,
+                        entry.key,
+                        j.value,
+                        entry.data.kind === "heure_fin_max_jour"
+                          ? entry.data.jour
+                          : 0
+                      );
+                      return (
+                        <option key={j.value} value={j.value} disabled={dis}>
+                          {j.label}
+                          {dis ? " — déjà défini" : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-slate-600">
+                    Dernière heure de fin (incl.)
+                  </span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={24}
+                    value={
+                      entry.data.kind === "heure_fin_max_jour"
+                        ? entry.data.heureFinMax
+                        : 16
+                    }
+                    onChange={(e) => {
+                      const d = entry.data;
+                      if (d.kind !== "heure_fin_max_jour") return;
+                      const v = Number(e.target.value);
+                      updateRow(entry.key, {
+                        ...d,
+                        heureFinMax: Number.isFinite(v) ? Math.trunc(v) : 1,
+                      });
+                    }}
+                    className="w-[min(28vw,5.5rem)] rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/30"
+                  />
+                </label>
+                <p className="w-full text-xs text-slate-500">
+                  Toute séance ce jour-là doit se terminer au plus tard à cette heure
+                  (ex. vendredi 16 → cours finissant à 16h autorisé, 17h non).
+                </p>
+              </div>
+            ) : null}
+
+            {entry.data.kind === "volume_heures_jour" ? (
+              <div className="space-y-1 pt-1">
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-slate-600">
+                    Max. heures enseignées / jour
+                  </span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={MAX_HEURES_PLAFOND_JOUR}
+                    value={entry.data.maxHeuresJour}
+                    onChange={(e) => {
+                      const d = entry.data;
+                      if (d.kind !== "volume_heures_jour") return;
+                      const v = Number(e.target.value);
+                      updateRow(entry.key, {
+                        ...d,
+                        maxHeuresJour: Number.isFinite(v) ? Math.trunc(v) : 1,
+                      });
+                    }}
+                    className="w-[min(28vw,5rem)] rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/30"
+                  />
+                </label>
+                <p className="text-xs text-slate-500">
+                  Total des durées de séances du professeur sur une même journée
+                  (toutes matières et formations), en heures.
+                </p>
+              </div>
+            ) : null}
+
+            {entry.data.kind === "volume_heures_semaine" ? (
+              <div className="space-y-1 pt-1">
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-slate-600">
+                    Max. heures enseignées / semaine de grille
+                  </span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={MAX_HEURES_PLAFOND_SEMAINE}
+                    value={entry.data.maxHeuresSemaine}
+                    onChange={(e) => {
+                      const d = entry.data;
+                      if (d.kind !== "volume_heures_semaine") return;
+                      const v = Number(e.target.value);
+                      updateRow(entry.key, {
+                        ...d,
+                        maxHeuresSemaine: Number.isFinite(v)
+                          ? Math.trunc(v)
+                          : 1,
+                      });
+                    }}
+                    className="w-[min(28vw,5rem)] rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/30"
+                  />
+                </label>
+                <p className="text-xs text-slate-500">
+                  Total des durées sur une semaine d’horizon (toutes matières et
+                  formations).
+                </p>
+              </div>
+            ) : null}
+
             {entry.data.kind === "creneaux_interdits" ? (
               <div className="space-y-2 pt-1">
                 <p className="text-xs text-slate-600">
-                  Fenêtres horaires interdites pour ce professeur (fin exclusive,
-                  comme la grille planning). Plusieurs lignes « Créneaux interdits »
-                  se cumulent.
+                  Indisponibilités récurrentes : plages où le professeur ne peut pas
+                  être cadré (fin d’intervalle exclusive, comme la grille planning).
+                  Plusieurs lignes « Créneaux interdits » se cumulent.
                 </p>
                 {entry.data.creneaux.map((cr, idx) => (
                   <div

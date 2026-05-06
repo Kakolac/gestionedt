@@ -30,6 +30,14 @@ const ProfesseurContrainteSchema = new Schema(
     },
     maxHeuresConsecutives: { type: Number, default: undefined },
     maxCoursParJour: { type: Number, default: undefined },
+    /** `heure_fin_max_jour` : 1–7. */
+    jour: { type: Number, default: undefined, min: 1, max: 7 },
+    /** `heure_fin_max_jour` : heure de fin max (inclusive). */
+    heureFinMax: { type: Number, default: undefined },
+    /** `volume_heures_jour`. */
+    maxHeuresJour: { type: Number, default: undefined },
+    /** `volume_heures_semaine`. */
+    maxHeuresSemaine: { type: Number, default: undefined },
   },
   { _id: true }
 );

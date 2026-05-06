@@ -3,6 +3,9 @@
 export const PROFESSEUR_CONTRAINTE_KINDS = [
   "jours_travail",
   "creneaux_interdits",
+  "heure_fin_max_jour",
+  "volume_heures_jour",
+  "volume_heures_semaine",
   "bloc_consecutif_matiere",
   "volume_jour_matiere",
 ] as const;
@@ -23,6 +26,10 @@ export type ProfesseurContrainteKind =
 export const CONTRAINTE_MAX_COUNT = 50;
 export const MAX_HEURES_CONSECUTIVES = 12;
 export const MAX_COURS_PAR_JOUR = 20;
+/** Plafond « max heures / jour » (total prof toutes matières) — validation formulaire. */
+export const MAX_HEURES_PLAFOND_JOUR = 24;
+/** Plafond « max heures / semaine » — validation formulaire. */
+export const MAX_HEURES_PLAFOND_SEMAINE = 80;
 
 /**
  * Représentation échangée formulaire → action (JSON `contraintesJson`).
@@ -40,6 +47,27 @@ export type ProfesseurContrainteWire =
       priorite: number;
       actif: boolean;
       creneaux: CreneauInterditWire[];
+    }
+  | {
+      kind: "heure_fin_max_jour";
+      priorite: number;
+      actif: boolean;
+      /** 1 = lundi … 7 = dimanche. */
+      jour: number;
+      /** Dernière heure de fin de créneau autorisée (inclusive), ex. 16 = cours terminés au plus tard à 16h. */
+      heureFinMax: number;
+    }
+  | {
+      kind: "volume_heures_jour";
+      priorite: number;
+      actif: boolean;
+      maxHeuresJour: number;
+    }
+  | {
+      kind: "volume_heures_semaine";
+      priorite: number;
+      actif: boolean;
+      maxHeuresSemaine: number;
     }
   | {
       kind: "bloc_consecutif_matiere";

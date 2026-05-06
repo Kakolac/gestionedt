@@ -1,8 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { PlanningGrid } from "@/components/planning/planning-grid";
+import { useCallback, useMemo, useState } from "react";
+import type { MouseEvent } from "react";
+import { PlanningGridContextMenu } from "@/components/planning/planning-grid-context-menu";
+import {
+  PlanningGrid,
+  type VerticalMergedBlock,
+} from "@/components/planning/planning-grid";
 import { normalizePlanningExport } from "@/lib/planning/planning-normalize";
+import { trySwapMergedBlockSessions } from "@/lib/planning/planning-manual-swap";
 import {
   nombreSemainesGrid,
   slotSemaine,
@@ -29,6 +35,34 @@ export type PlanningBuilderProps = {
   nombreSemainesRepetition?: number;
 };
 
+/** Remonte `PlanningBuilderBody` pour réinitialiser sélection / retouches manuelles. */
+function planningBuilderResetKey(
+  raw: PlanningExportRaw,
+  grid: PlanningGridConfig
+): string {
+  const meta = raw.meta;
+  const fs = raw.formations;
+  const ms = raw.matieres;
+  const ps = raw.professeurs;
+  const nF = Array.isArray(fs) ? fs.length : 0;
+  const nM = Array.isArray(ms) ? ms.length : 0;
+  const nP = Array.isArray(ps) ? ps.length : 0;
+  const ids = [...(meta?.formationIdsRequested ?? [])].sort().join(",");
+  return [
+    meta?.exportedAt ?? "",
+    String(meta?.version ?? ""),
+    ids,
+    nF,
+    nM,
+    nP,
+    grid.nombreSemaines ?? 1,
+    grid.maxSeanceHeures ?? "",
+    grid.heureDebut,
+    grid.heureFin,
+    grid.joursSemaine.join(","),
+  ].join("|");
+}
+
 function sessionResume(
   s: PlanningSession,
   planning: PlanningData,
@@ -48,38 +82,138 @@ function sessionResume(
   return `${d.formationNom} / ${d.matiereNom} / ${d.professeurNom} — ${s.duree}h — ${slot}${salle}`;
 }
 
-/**
- * Normalise l’export JSON brut, construit les demandes / séances et exécute le placement glouton global.
- */
-export function PlanningBuilder({
-  rawData,
-  gridConfig = DEFAULT_PLANNING_GRID,
-  nombreSemainesRepetition,
-}: PlanningBuilderProps) {
-  const gridEffectif = useMemo(() => {
-    const base = { ...DEFAULT_PLANNING_GRID, ...gridConfig };
-    if (nombreSemainesRepetition != null) {
-      const ns = Math.min(
-        52,
-        Math.max(1, Math.floor(Number(nombreSemainesRepetition)) || 1)
-      );
-      return { ...base, nombreSemaines: ns };
-    }
-    return base;
-  }, [gridConfig, nombreSemainesRepetition]);
+function blocksSameSessionSet(
+  selectionIds: readonly string[],
+  block: VerticalMergedBlock
+): boolean {
+  if (selectionIds.length !== block.sessions.length) return false;
+  const set = new Set(selectionIds);
+  for (const s of block.sessions) {
+    if (!set.has(s.id)) return false;
+  }
+  return true;
+}
 
+type PlanningBuilderBodyProps = {
+  rawData: PlanningExportRaw;
+  gridEffectif: PlanningGridConfig;
+};
+
+function PlanningBuilderBody({
+  rawData,
+  gridEffectif,
+}: PlanningBuilderBodyProps) {
   const horizonNs = nombreSemainesGrid(gridEffectif);
 
   const [semaineCourante, setSemaineCourante] = useState(1);
+  const semaineAffichee = Math.min(
+    horizonNs,
+    Math.max(1, semaineCourante)
+  );
 
-  useEffect(() => {
-    setSemaineCourante((prev) => Math.min(Math.max(1, prev), horizonNs));
-  }, [horizonNs]);
-
-  const planningData = useMemo(() => {
+  const basePlanningData = useMemo(() => {
     const normalized = normalizePlanningExport(rawData, gridEffectif);
     return scheduleGreedy(normalized, gridEffectif);
   }, [rawData, gridEffectif]);
+
+  const [manualSessions, setManualSessions] = useState<
+    PlanningSession[] | null
+  >(null);
+  const [swapSelectionIds, setSwapSelectionIds] = useState<string[] | null>(
+    null
+  );
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    block: VerticalMergedBlock;
+  } | null>(null);
+  const [swapError, setSwapError] = useState<string | null>(null);
+
+  const planningData = useMemo(() => {
+    if (manualSessions == null) return basePlanningData;
+    return { ...basePlanningData, sessions: manualSessions };
+  }, [basePlanningData, manualSessions]);
+
+  const highlightSessionIds = useMemo(() => {
+    if (swapSelectionIds == null || swapSelectionIds.length === 0) {
+      return undefined;
+    }
+    return new Set(swapSelectionIds);
+  }, [swapSelectionIds]);
+
+  const selectionRecap = useMemo(() => {
+    if (swapSelectionIds == null || swapSelectionIds.length === 0) {
+      return null;
+    }
+    const firstId = swapSelectionIds[0];
+    const s0 = planningData.sessions.find((x) => x.id === firstId);
+    if (!s0) return null;
+    const d = planningData.demands.find((x) => x.id === s0.demandId);
+    if (!d) {
+      return `${swapSelectionIds.length} séance(s) sélectionnée(s).`;
+    }
+    return `${d.formationNom} — ${d.matiereNom} — ${d.professeurNom} · ${
+      swapSelectionIds.length
+    } créneau(x)`;
+  }, [planningData, swapSelectionIds]);
+
+  const onBlockContextMenu = useCallback(
+    (event: MouseEvent, block: VerticalMergedBlock) => {
+      setContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        block,
+      });
+    },
+    []
+  );
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null);
+  }, []);
+
+  const onSelectBloc = useCallback(() => {
+    const b = contextMenu?.block;
+    if (!b) return;
+    setSwapSelectionIds(b.sessions.map((s) => s.id));
+    setSwapError(null);
+  }, [contextMenu]);
+
+  const onClearSwapSelection = useCallback(() => {
+    setSwapSelectionIds(null);
+    setSwapError(null);
+  }, []);
+
+  const onSwapWithSelection = useCallback(() => {
+    const target = contextMenu?.block;
+    const ids = swapSelectionIds;
+    if (!target || ids == null || ids.length === 0) {
+      return;
+    }
+    const selectedSessions = planningData.sessions.filter((s) =>
+      ids.includes(s.id)
+    );
+    const res = trySwapMergedBlockSessions(
+      selectedSessions,
+      target.sessions,
+      planningData.sessions
+    );
+    if (!res.ok) {
+      setSwapError(res.error);
+      return;
+    }
+    setManualSessions(res.sessions);
+    setSwapSelectionIds(null);
+    setSwapError(null);
+  }, [contextMenu, planningData.sessions, swapSelectionIds]);
+
+  const hasSwapSelection =
+    swapSelectionIds != null && swapSelectionIds.length > 0;
+  const canSwapFromMenu =
+    swapSelectionIds != null &&
+    swapSelectionIds.length > 0 &&
+    contextMenu != null &&
+    !blocksSameSessionSet(swapSelectionIds, contextMenu.block);
 
   const scheduled = useMemo(
     () => planningData.sessions.filter((s) => s.statut === "scheduled"),
@@ -132,7 +266,7 @@ export function PlanningBuilder({
             <label className="flex flex-wrap items-center gap-[1.5vw] text-[clamp(0.82rem,1.15vw,0.95rem)] text-slate-700">
               <span className="font-medium text-slate-800">Afficher la semaine</span>
               <select
-                value={semaineCourante}
+                value={semaineAffichee}
                 onChange={(e) =>
                   setSemaineCourante(
                     Math.min(
@@ -152,10 +286,56 @@ export function PlanningBuilder({
             </label>
           ) : null}
         </div>
+        <p className="max-w-[min(92vw,48rem)] text-[clamp(0.8rem,1.15vw,0.92rem)] text-slate-600">
+          Clic droit sur un cours : menu{" "}
+          <strong className="font-medium text-slate-800">Sélectionner</strong> puis
+          clic droit sur un autre bloc pour{" "}
+          <strong className="font-medium text-slate-800">
+            Intervertir avec la sélection
+          </strong>
+          . Les échanges manuels ne vérifient que les chevauchements professeur et
+          formation (pas salles ni créneaux interdits).
+        </p>
+        {selectionRecap != null ? (
+          <div className="flex max-w-[min(92vw,52rem)] flex-wrap items-center justify-between gap-[2vw] rounded-xl border border-indigo-200/80 bg-indigo-50/70 px-[2.5vw] py-[1.25vh] text-[clamp(0.82rem,1.15vw,0.95rem)] text-indigo-950">
+            <p>
+              <span className="font-semibold">Bloc sélectionné : </span>
+              {selectionRecap}
+            </p>
+            <button
+              type="button"
+              onClick={onClearSwapSelection}
+              className="shrink-0 rounded-lg border border-indigo-300/80 bg-white px-[2vw] py-[0.9vh] text-[clamp(0.78rem,1.05vw,0.88rem)] font-medium text-indigo-900 shadow-sm hover:bg-indigo-50"
+            >
+              Annuler la sélection
+            </button>
+          </div>
+        ) : null}
+        {swapError != null ? (
+          <p
+            role="alert"
+            className="max-w-[min(92vw,40rem)] rounded-xl border border-red-200 bg-red-50/95 px-[2vw] py-[1.25vh] text-[clamp(0.82rem,1.1vw,0.92rem)] text-red-900"
+          >
+            {swapError}
+          </p>
+        ) : null}
         <PlanningGrid
           planningData={planningData}
           grid={gridEffectif}
-          semaineAffichee={semaineCourante}
+          semaineAffichee={semaineAffichee}
+          highlightSessionIds={highlightSessionIds}
+          onBlockContextMenu={onBlockContextMenu}
+        />
+        <PlanningGridContextMenu
+          open={contextMenu != null}
+          x={contextMenu?.x ?? 0}
+          y={contextMenu?.y ?? 0}
+          hasSelection={hasSwapSelection}
+          canSwap={canSwapFromMenu}
+          onClose={closeContextMenu}
+          onSelectBloc={onSelectBloc}
+          onSwapWithSelection={onSwapWithSelection}
+          onClearSelection={onClearSwapSelection}
         />
       </section>
 
@@ -203,5 +383,39 @@ export function PlanningBuilder({
         </details>
       </section>
     </div>
+  );
+}
+
+/**
+ * Normalise l’export JSON brut, construit les demandes / séances et exécute le placement glouton global.
+ */
+export function PlanningBuilder({
+  rawData,
+  gridConfig = DEFAULT_PLANNING_GRID,
+  nombreSemainesRepetition,
+}: PlanningBuilderProps) {
+  const gridEffectif = useMemo(() => {
+    const base = { ...DEFAULT_PLANNING_GRID, ...gridConfig };
+    if (nombreSemainesRepetition != null) {
+      const ns = Math.min(
+        52,
+        Math.max(1, Math.floor(Number(nombreSemainesRepetition)) || 1)
+      );
+      return { ...base, nombreSemaines: ns };
+    }
+    return base;
+  }, [gridConfig, nombreSemainesRepetition]);
+
+  const resetKey = useMemo(
+    () => planningBuilderResetKey(rawData, gridEffectif),
+    [rawData, gridEffectif]
+  );
+
+  return (
+    <PlanningBuilderBody
+      key={resetKey}
+      rawData={rawData}
+      gridEffectif={gridEffectif}
+    />
   );
 }

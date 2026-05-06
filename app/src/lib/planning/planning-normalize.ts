@@ -1,6 +1,8 @@
 import {
   isProfesseurContrainteKind,
   MAX_CRENEAUX_PAR_CONTRAINTE,
+  MAX_HEURES_PLAFOND_JOUR,
+  MAX_HEURES_PLAFOND_SEMAINE,
   type ProfesseurContrainteWire,
 } from "@/lib/professeurContraintes.shared";
 import {
@@ -239,6 +241,65 @@ function parseContrainte(raw: unknown): ProfesseurContrainteWire | null {
     return { kind: "creneaux_interdits", priorite, actif, creneaux };
   }
 
+  if (kind === "heure_fin_max_jour") {
+    const jourN = typeof o.jour === "number" ? o.jour : Number(o.jour);
+    const hfm =
+      typeof o.heureFinMax === "number"
+        ? o.heureFinMax
+        : Number(o.heureFinMax);
+    if (
+      !Number.isInteger(jourN) ||
+      jourN < 1 ||
+      jourN > 7 ||
+      !Number.isInteger(hfm) ||
+      hfm < 1 ||
+      hfm > 24
+    ) {
+      return null;
+    }
+    return {
+      kind: "heure_fin_max_jour",
+      priorite,
+      actif,
+      jour: jourN,
+      heureFinMax: hfm,
+    };
+  }
+
+  if (kind === "volume_heures_jour") {
+    const maxH = asNonNegativeInt(o.maxHeuresJour);
+    if (
+      maxH === null ||
+      maxH < 1 ||
+      maxH > MAX_HEURES_PLAFOND_JOUR
+    ) {
+      return null;
+    }
+    return {
+      kind: "volume_heures_jour",
+      priorite,
+      actif,
+      maxHeuresJour: maxH,
+    };
+  }
+
+  if (kind === "volume_heures_semaine") {
+    const maxH = asNonNegativeInt(o.maxHeuresSemaine);
+    if (
+      maxH === null ||
+      maxH < 1 ||
+      maxH > MAX_HEURES_PLAFOND_SEMAINE
+    ) {
+      return null;
+    }
+    return {
+      kind: "volume_heures_semaine",
+      priorite,
+      actif,
+      maxHeuresSemaine: maxH,
+    };
+  }
+
   if (kind === "bloc_consecutif_matiere") {
     const matiereId = asString(o.matiereId);
     const maxHeures = asNonNegativeInt(o.maxHeuresConsecutives);
@@ -251,6 +312,8 @@ function parseContrainte(raw: unknown): ProfesseurContrainteWire | null {
       maxHeuresConsecutives: maxHeures,
     };
   }
+
+  if (kind !== "volume_jour_matiere") return null;
 
   const matiereIdV = asString(o.matiereId);
   const maxCours = asNonNegativeInt(o.maxCoursParJour);
