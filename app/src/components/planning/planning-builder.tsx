@@ -13,12 +13,17 @@ import {
   PlanningGrid,
   type VerticalMergedBlock,
 } from "@/components/planning/planning-grid";
+import { PlanningProfessorColorPickPopover } from "@/components/planning/PlanningProfessorColorPickPopover";
 import { normalizePlanningExport } from "@/lib/planning/planning-normalize";
 import { trySwapMergedBlockSessions } from "@/lib/planning/planning-manual-swap";
 import {
   nombreSemainesGrid,
   slotSemaine,
 } from "@/lib/planning/planning-slot";
+import {
+  normalizeHex6,
+  type PlanningProfessorColorOverride,
+} from "@/lib/planning/planning-professor-accent";
 import {
   DEFAULT_PLANNING_GRID,
   scheduleGreedy,
@@ -131,6 +136,17 @@ function blocksSameSessionSet(
   return true;
 }
 
+function professorDisplayLabel(planning: PlanningData, professeurId: string): string {
+  const ref = planning.references.professeurs.find((p) => p.id === professeurId);
+  if (ref) {
+    const n = `${ref.prenom ?? ""} ${ref.nom ?? ""}`.trim();
+    if (n) return n;
+  }
+  const demand = planning.demands.find((x) => x.professeurId === professeurId);
+  if (demand?.professeurNom?.trim()) return demand.professeurNom.trim();
+  return professeurId;
+}
+
 type PlanningBuilderBodyProps = {
   rawData: PlanningExportRaw;
   gridEffectif: PlanningGridConfig;
@@ -172,6 +188,14 @@ function PlanningBuilderBody({
   const [fullscreenError, setFullscreenError] = useState<string | null>(
     null
   );
+  const [profColorOverrideByProfId, setProfColorOverrideByProfId] =
+    useState<Record<string, PlanningProfessorColorOverride>>({});
+  const [profColorPopover, setProfColorPopover] = useState<{
+    professeurId: string;
+    professeurLabel: string;
+    x: number;
+    y: number;
+  } | null>(null);
 
   const planningData = useMemo(() => {
     if (manualSessions == null) return basePlanningData;
@@ -225,6 +249,19 @@ function PlanningBuilderBody({
   const closeContextMenu = useCallback(() => {
     setContextMenu(null);
   }, []);
+
+  const onPickProfessorColorFromMenu = useCallback(() => {
+    const ctx = contextMenu;
+    if (ctx == null) return;
+    const label = professorDisplayLabel(planningData, ctx.block.professeurId);
+    setProfColorPopover({
+      professeurId: ctx.block.professeurId,
+      professeurLabel: label,
+      x: ctx.x + 10,
+      y: ctx.y + 6,
+    });
+    setContextMenu(null);
+  }, [contextMenu, planningData]);
 
   const onSelectBloc = useCallback(() => {
     const b = contextMenu?.block;
@@ -502,6 +539,7 @@ function PlanningBuilderBody({
             }
             flexibleHeight={isFullscreen}
             highlightSessionIds={highlightSessionIds}
+            professorColorOverrideByProfId={profColorOverrideByProfId}
             onBlockContextMenu={onBlockContextMenu}
           />
         </div>
@@ -511,10 +549,56 @@ function PlanningBuilderBody({
           y={contextMenu?.y ?? 0}
           hasSelection={hasSwapSelection}
           canSwap={canSwapFromMenu}
+          showProfessorColorPick
           onClose={closeContextMenu}
           onSelectBloc={onSelectBloc}
+          onPickProfessorColor={onPickProfessorColorFromMenu}
           onSwapWithSelection={onSwapWithSelection}
           onClearSelection={onClearSwapSelection}
+        />
+        <PlanningProfessorColorPickPopover
+          open={profColorPopover != null}
+          x={profColorPopover?.x ?? 0}
+          y={profColorPopover?.y ?? 0}
+          professeurId={profColorPopover?.professeurId ?? ""}
+          professeurLabel={profColorPopover?.professeurLabel ?? ""}
+          colorOverride={
+            profColorPopover != null
+              ? profColorOverrideByProfId[profColorPopover.professeurId]
+              : undefined
+          }
+          onSelectHue={(hueDegrees) => {
+            if (profColorPopover == null) return;
+            setProfColorOverrideByProfId((prev) => ({
+              ...prev,
+              [profColorPopover.professeurId]: {
+                mode: "hue",
+                hueDegrees,
+              },
+            }));
+          }}
+          onSelectExactHex={(hexRaw) => {
+            if (profColorPopover == null) return;
+            const hex = normalizeHex6(hexRaw);
+            if (hex == null) return;
+            setProfColorOverrideByProfId((prev) => ({
+              ...prev,
+              [profColorPopover.professeurId]: {
+                mode: "hex",
+                hex,
+              },
+            }));
+          }}
+          onClearOverride={() => {
+            if (profColorPopover == null) return;
+            const id = profColorPopover.professeurId;
+            setProfColorOverrideByProfId((prev) => {
+              const next = { ...prev };
+              delete next[id];
+              return next;
+            });
+          }}
+          onClose={() => setProfColorPopover(null)}
         />
       </section>
 

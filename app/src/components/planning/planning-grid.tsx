@@ -7,6 +7,10 @@ import type {
   PlanningSession,
 } from "@/lib/planning/planning.types";
 import { nombreSemainesGrid, slotSemaine } from "@/lib/planning/planning-slot";
+import {
+  resolveProfessorAccent,
+  type PlanningProfessorColorOverride,
+} from "@/lib/planning/planning-professor-accent";
 
 export type PlanningGridProps = {
   planningData: PlanningData;
@@ -24,6 +28,12 @@ export type PlanningGridProps = {
   flexibleHeight?: boolean;
   /** Ids des séances du bloc actuellement sélectionné pour un échange manuel. */
   highlightSessionIds?: ReadonlySet<string>;
+  /**
+   * Surcharge couleur par `professeurId` : teinte pastel (palette ou raccourci) ou hex exact (couleur libre).
+   */
+  professorColorOverrideByProfId?: Readonly<
+    Record<string, PlanningProfessorColorOverride>
+  >;
   /** Clic droit sur un bloc (carte fusionnée). */
   onBlockContextMenu?: (event: MouseEvent, block: VerticalMergedBlock) => void;
 };
@@ -47,38 +57,6 @@ export type VerticalMergedBlock = {
   professeurId: string;
   sessions: PlanningSession[];
 };
-
-/**
- * Couleurs des tuiles cours : cycle emerald → teal → cyan → sky → violet → rose
- * (plus contrastées que l’en-tête indigo/fuchsia de la page).
- */
-const TILE_HUES = [158, 172, 188, 201, 265, 332, 142, 24] as const;
-
-function formationAccent(formationId: string): {
-  border: string;
-  background: string;
-  labelColor: string;
-  matiereColor: string;
-  badgeSurface: string;
-  badgeText: string;
-  badgeRing: string;
-} {
-  let n = 0;
-  for (let i = 0; i < formationId.length; i += 1) {
-    n = (n * 31 + formationId.charCodeAt(i)) >>> 0;
-  }
-  const h = TILE_HUES[n % TILE_HUES.length];
-  const h2 = TILE_HUES[(n + 4) % TILE_HUES.length];
-  return {
-    border: `hsl(${h} 52% 36%)`,
-    background: `linear-gradient(160deg, hsl(${h} 36% 92%) 0%, hsl(${h} 42% 88%) 40%, hsl(${h2} 30% 90%) 100%)`,
-    labelColor: `hsl(${h} 48% 28%)`,
-    matiereColor: `hsl(${h} 40% 22%)`,
-    badgeSurface: `hsl(${h} 28% 97%)`,
-    badgeText: `hsl(${h} 42% 26%)`,
-    badgeRing: `hsl(${h} 32% 78%)`,
-  };
-}
 
 function formationSortLabel(planningData: PlanningData, formationId: string): string {
   const d = planningData.demands.find((x) => x.formationId === formationId);
@@ -160,17 +138,22 @@ function blockIsHighlighted(
 function MergedBlockCard({
   block,
   planningData,
+  professorColorOverride,
   highlighted,
   onContextMenu,
 }: {
   block: VerticalMergedBlock;
   planningData: PlanningData;
+  professorColorOverride?: PlanningProfessorColorOverride | null;
   highlighted?: boolean;
   onContextMenu?: (event: MouseEvent) => void;
 }) {
   const first = block.sessions[0];
   const d = planningData.demands.find((x) => x.id === first.demandId);
-  const accent = formationAccent(block.formationId);
+  const accent = resolveProfessorAccent(
+    block.professeurId,
+    professorColorOverride ?? undefined
+  );
   const totalHeures = block.endHour - block.startHour;
   const creneau = `${block.startHour}h – ${block.endHour}h`;
   const nbSeances = block.sessions.length;
@@ -244,7 +227,18 @@ function MergedBlockCard({
           </span>
         ) : null}
       </p>
-      <h3 className="mt-1 text-[clamp(0.8rem,1.15vw,0.95rem)] font-semibold leading-tight text-slate-900 line-clamp-2">
+      <h3
+        className={
+          accent.cardFormationTitleColor == null
+            ? "mt-1 text-[clamp(0.8rem,1.15vw,0.95rem)] font-semibold leading-tight text-slate-900 line-clamp-2"
+            : "mt-1 text-[clamp(0.8rem,1.15vw,0.95rem)] font-semibold leading-tight line-clamp-2"
+        }
+        style={
+          accent.cardFormationTitleColor != null
+            ? { color: accent.cardFormationTitleColor }
+            : undefined
+        }
+      >
         {d.formationNom}
       </h3>
       <p
@@ -253,8 +247,32 @@ function MergedBlockCard({
       >
         {d.matiereNom}
       </p>
-      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[clamp(0.72rem,1vw,0.82rem)] text-slate-700">
-        <span className="font-medium text-slate-800">{d.professeurNom}</span>
+      <div
+        className={
+          accent.cardFooterMutedColor == null
+            ? "mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[clamp(0.72rem,1vw,0.82rem)] text-slate-700"
+            : "mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[clamp(0.72rem,1vw,0.82rem)]"
+        }
+        style={
+          accent.cardFooterMutedColor != null
+            ? { color: accent.cardFooterMutedColor }
+            : undefined
+        }
+      >
+        <span
+          className={
+            accent.cardProfNameColor == null
+              ? "font-medium text-slate-800"
+              : "font-medium"
+          }
+          style={
+            accent.cardProfNameColor != null
+              ? { color: accent.cardProfNameColor }
+              : undefined
+          }
+        >
+          {d.professeurNom}
+        </span>
         <span
           className="rounded-md px-1.5 py-0.5 tabular-nums font-medium shadow-sm"
           style={{
@@ -280,11 +298,15 @@ function MergedBlockCard({
 function StackedStartBlocks({
   blocks,
   planningData,
+  professorColorOverrideByProfId,
   highlightSessionIds,
   onBlockContextMenu,
 }: {
   blocks: VerticalMergedBlock[];
   planningData: PlanningData;
+  professorColorOverrideByProfId?: Readonly<
+    Record<string, PlanningProfessorColorOverride>
+  >;
   highlightSessionIds?: ReadonlySet<string>;
   onBlockContextMenu?: (event: MouseEvent, block: VerticalMergedBlock) => void;
 }) {
@@ -304,6 +326,9 @@ function StackedStartBlocks({
           <MergedBlockCard
             block={b}
             planningData={planningData}
+            professorColorOverride={
+              professorColorOverrideByProfId?.[b.professeurId]
+            }
             highlighted={blockIsHighlighted(b, highlightSessionIds)}
             onContextMenu={
               onBlockContextMenu != null
@@ -328,6 +353,7 @@ export function PlanningGrid({
   formationAfficheeId,
   flexibleHeight = false,
   highlightSessionIds,
+  professorColorOverrideByProfId,
   onBlockContextMenu,
 }: PlanningGridProps) {
   const semaineVue = Math.min(
@@ -463,6 +489,9 @@ export function PlanningGrid({
                     <MergedBlockCard
                       block={b}
                       planningData={planningData}
+                      professorColorOverride={
+                        professorColorOverrideByProfId?.[b.professeurId]
+                      }
                       highlighted={blockIsHighlighted(b, highlightSessionIds)}
                       onContextMenu={
                         onBlockContextMenu != null
@@ -492,6 +521,9 @@ export function PlanningGrid({
                   <StackedStartBlocks
                     blocks={orderedStarts}
                     planningData={planningData}
+                    professorColorOverrideByProfId={
+                      professorColorOverrideByProfId
+                    }
                     highlightSessionIds={highlightSessionIds}
                     onBlockContextMenu={onBlockContextMenu}
                   />

@@ -10,9 +10,13 @@ export type PlanningGridContextMenuProps = {
   hasSelection: boolean;
   /** « Intervertir » pertinent (sélection + bloc cible différent). */
   canSwap: boolean;
+  /** Affiche l’entrée couleur professeur (grille planning). */
+  showProfessorColorPick?: boolean;
   onClose: () => void;
   /** Enregistrer le bloc sous le curseur comme sélection. */
   onSelectBloc: () => void;
+  /** Choisir une couleur pour le professeur du bloc sous le curseur. */
+  onPickProfessorColor?: () => void;
   /** Échanger avec la sélection (bloc sous le curseur = cible). */
   onSwapWithSelection: () => void;
   /** Effacer la sélection sans fermer si besoin — parent peut aussi fermer menu. */
@@ -28,8 +32,10 @@ export function PlanningGridContextMenu({
   y,
   hasSelection,
   canSwap,
+  showProfessorColorPick = false,
   onClose,
   onSelectBloc,
+  onPickProfessorColor,
   onSwapWithSelection,
   onClearSelection,
 }: PlanningGridContextMenuProps) {
@@ -58,8 +64,8 @@ export function PlanningGridContextMenu({
   if (!open) return null;
 
   const pad = 8;
-  const menuW = 220;
-  const menuH = 140;
+  const menuW = 260;
+  const menuH = showProfessorColorPick ? 200 : 140;
   const iw = typeof window !== "undefined" ? window.innerWidth : x + menuW + pad;
   const ih = typeof window !== "undefined" ? window.innerHeight : y + menuH + pad;
   const left = Math.max(pad, Math.min(x, iw - menuW - pad));
@@ -87,6 +93,18 @@ export function PlanningGridContextMenu({
       >
         Sélectionner
       </button>
+      {showProfessorColorPick && onPickProfessorColor != null ? (
+        <button
+          type="button"
+          role="menuitem"
+          className="block w-full px-[3vw] py-[1.2vh] text-left text-[clamp(0.8rem,1.15vw,0.95rem)] font-medium text-slate-800 hover:bg-violet-50 focus-visible:bg-violet-50 focus-visible:outline-none"
+          onClick={() => {
+            onPickProfessorColor();
+          }}
+        >
+          Couleur du professeur…
+        </button>
+      ) : null}
       <button
         type="button"
         role="menuitem"
