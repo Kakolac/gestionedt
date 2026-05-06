@@ -13,6 +13,15 @@ export type PlanningGridProps = {
   grid: PlanningGridConfig;
   /** Semaine 1-based à afficher lorsque `grid.nombreSemaines` &gt; 1. */
   semaineAffichee?: number;
+  /**
+   * Filtrage d’affichage : uniquement les séances de cette formation sur la grille.
+   * Ignoré si absent ou chaîne vide (toutes formations).
+   */
+  formationAfficheeId?: string;
+  /**
+   * Coque sans hauteur minimale fixe (`min(72vh,…)`), prête pour flex parent (ex. plein écran).
+   */
+  flexibleHeight?: boolean;
   /** Ids des séances du bloc actuellement sélectionné pour un échange manuel. */
   highlightSessionIds?: ReadonlySet<string>;
   /** Clic droit sur un bloc (carte fusionnée). */
@@ -316,6 +325,8 @@ export function PlanningGrid({
   planningData,
   grid,
   semaineAffichee = 1,
+  formationAfficheeId,
+  flexibleHeight = false,
   highlightSessionIds,
   onBlockContextMenu,
 }: PlanningGridProps) {
@@ -324,12 +335,17 @@ export function PlanningGrid({
     Math.max(1, Math.floor(semaineAffichee) || 1)
   );
 
+  const filtreFormation = formationAfficheeId?.trim() ?? "";
+
   const sessionsPourSemaine = useMemo(() => {
     return planningData.sessions.filter((s) => {
+      if (filtreFormation !== "" && s.formationId !== filtreFormation) {
+        return false;
+      }
       if (s.statut !== "scheduled" || s.assignedSlot == null) return false;
       return slotSemaine(s.assignedSlot) === semaineVue;
     });
-  }, [planningData.sessions, semaineVue]);
+  }, [planningData.sessions, semaineVue, filtreFormation]);
 
   const heures = useMemo(() => {
     const h: number[] = [];
@@ -353,8 +369,12 @@ export function PlanningGrid({
 
   return (
     <div
-      className="w-full overflow-x-auto rounded-2xl border border-indigo-200/60 bg-gradient-to-br from-white via-indigo-50/30 to-sky-50/40 shadow-[0_12px_40px_rgba(49,46,129,0.1)]"
-      style={{ minHeight: "min(72vh, 56rem)" }}
+      className={
+        flexibleHeight
+          ? "flex min-h-0 w-full min-w-0 flex-1 overflow-auto rounded-2xl border border-indigo-200/60 bg-gradient-to-br from-white via-indigo-50/30 to-sky-50/40 shadow-[0_12px_40px_rgba(49,46,129,0.1)]"
+          : "w-full overflow-x-auto rounded-2xl border border-indigo-200/60 bg-gradient-to-br from-white via-indigo-50/30 to-sky-50/40 shadow-[0_12px_40px_rgba(49,46,129,0.1)]"
+      }
+      style={flexibleHeight ? undefined : { minHeight: "min(72vh, 56rem)" }}
     >
       <div
         aria-label={
