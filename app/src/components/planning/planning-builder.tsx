@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -13,9 +14,11 @@ import {
   PlanningGrid,
   type VerticalMergedBlock,
 } from "@/components/planning/planning-grid";
+import { PlanningManualSwapConstraintConfirmModal } from "@/components/planning/PlanningManualSwapConstraintConfirmModal";
 import { PlanningProfessorColorPickPopover } from "@/components/planning/PlanningProfessorColorPickPopover";
 import { listMergedBlocksForGridView } from "@/lib/planning/planning-grid-view-blocks";
 import { normalizePlanningExport } from "@/lib/planning/planning-normalize";
+import { collectProfessorConstraintIssuesAfterSwap } from "@/lib/planning/planning-manual-swap-constraints";
 import { trySwapMergedBlockSessions } from "@/lib/planning/planning-manual-swap";
 import {
   nombreSemainesGrid,
@@ -197,6 +200,10 @@ function PlanningBuilderBody({
     x: number;
     y: number;
   } | null>(null);
+  const [swapConstraintPending, setSwapConstraintPending] = useState<{
+    sessions: PlanningSession[];
+    issues: ReturnType<typeof collectProfessorConstraintIssuesAfterSwap>;
+  } | null>(null);
 
   const planningData = useMemo(() => {
     if (manualSessions == null) return basePlanningData;
@@ -294,10 +301,35 @@ function PlanningBuilderBody({
       setSwapError(res.error);
       return;
     }
+    const issues = collectProfessorConstraintIssuesAfterSwap(
+      selectedSessions,
+      target.sessions,
+      res.sessions,
+      gridEffectif,
+      planningData
+    );
+    if (issues.length > 0) {
+      setSwapConstraintPending({ sessions: res.sessions, issues });
+      setSwapError(null);
+      return;
+    }
     setManualSessions(res.sessions);
     setSwapSelectionIds(null);
     setSwapError(null);
-  }, [contextMenu, planningData.sessions, swapSelectionIds]);
+  }, [contextMenu, gridEffectif, planningData, swapSelectionIds]);
+
+  const onConfirmSwapDespiteConstraints = useCallback(() => {
+    const p = swapConstraintPending;
+    if (p == null) return;
+    setManualSessions(p.sessions);
+    setSwapConstraintPending(null);
+    setSwapSelectionIds(null);
+    setSwapError(null);
+  }, [swapConstraintPending]);
+
+  const onCancelSwapConstraintModal = useCallback(() => {
+    setSwapConstraintPending(null);
+  }, []);
 
   const hasSwapSelection =
     swapSelectionIds != null && swapSelectionIds.length > 0;
@@ -317,9 +349,12 @@ function PlanningBuilderBody({
     [planningData.sessions]
   );
 
+  /** Le JSON peut être volumineux : on ne le sérialise que lorsque le panneau est ouvert. */
+  const [jsonDetailsOpen, setJsonDetailsOpen] = useState(false);
   const jsonPretty = useMemo(
-    () => JSON.stringify(planningData, null, 2),
-    [planningData]
+    () =>
+      jsonDetailsOpen ? JSON.stringify(planningData, null, 2) : "",
+    [jsonDetailsOpen, planningData]
   );
 
   const formationFiltreTrim = formationAfficheeIdFilter.trim();
@@ -328,9 +363,8 @@ function PlanningBuilderBody({
     if (swapSelectionIds == null || swapSelectionIds.length === 0) {
       return undefined;
     }
-    const selectedSessions = planningData.sessions.filter((s) =>
-      swapSelectionIds.includes(s.id)
-    );
+    const pick = new Set(swapSelectionIds);
+    const selectedSessions = planningData.sessions.filter((s) => pick.has(s.id));
     if (selectedSessions.length === 0) return undefined;
     const visibleBlocks = listMergedBlocksForGridView(
       planningData,
@@ -528,8 +562,10 @@ function PlanningBuilderBody({
             <strong className="font-medium text-slate-800">
               Intervertir avec la sélection
             </strong>
-            . Les échanges manuels ne vérifient que les chevauchements professeur et
-            formation (pas salles ni créneaux interdits).
+            . Un échange refusé pour chevauchement professeur ou formation reste bloqué ;
+            si le nouvel emplacement contrevient aux contraintes enregistrées du
+            professeur (jours, plages interdites, salles, volumes…), une modale demande
+            confirmation avant d’appliquer le changement.
           </p>
         ) : (
           <p className="shrink-0 text-[clamp(0.76rem,1.05vw,0.85rem)] text-slate-500">
@@ -593,6 +629,12 @@ function PlanningBuilderBody({
           onPickProfessorColor={onPickProfessorColorFromMenu}
           onSwapWithSelection={onSwapWithSelection}
           onClearSelection={onClearSwapSelection}
+        />
+        <PlanningManualSwapConstraintConfirmModal
+          open={swapConstraintPending != null}
+          issues={swapConstraintPending?.issues ?? []}
+          onConfirm={onConfirmSwapDespiteConstraints}
+          onCancel={onCancelSwapConstraintModal}
         />
         <PlanningProfessorColorPickPopover
           open={profColorPopover != null}
@@ -677,7 +719,10 @@ function PlanningBuilderBody({
 
       {!isFullscreen ? (
       <section className="flex min-h-[28vh] flex-col gap-2">
-        <details className="group rounded-2xl border border-indigo-200/60 bg-white/85 shadow-[0_8px_30px_rgba(49,46,129,0.06)]">
+        <details
+          className="group rounded-2xl border border-indigo-200/60 bg-white/85 shadow-[0_8px_30px_rgba(49,46,129,0.06)]"
+          onToggle={(e) => setJsonDetailsOpen(e.currentTarget.open)}
+        >
           <summary className="cursor-pointer select-none px-4 py-3 text-[clamp(0.95rem,1.4vw,1.05rem)] font-semibold text-indigo-900 marker:text-indigo-500">
             planningData (JSON normalisé) — afficher / masquer
           </summary>

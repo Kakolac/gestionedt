@@ -362,26 +362,33 @@ function sessionScheduled(
   return out;
 }
 
-function canPlaceSession(
+/**
+ * Motif du premier échec si la séance ne respecte pas les règles de placement
+ * (grille, contraintes professeur, salle, cohorte, volumes).
+ * `placed` doit être l’ensemble du planning **sans** `trial` (ou avec l’ancienne place de `trial` exclue).
+ */
+export function sessionPlacementBlocker(
   trial: PlanningSession,
   demand: PlanningDemand,
   placed: readonly PlanningSession[],
   grid: PlanningGridConfig
-): boolean {
+): string | null {
   const slot = trial.assignedSlot;
-  if (slot == null) return false;
-  if (!slotWithinGrid(slot, grid)) return false;
+  if (slot == null) return "Créneau non défini.";
+  if (!slotWithinGrid(slot, grid)) {
+    return "Créneau hors de la grille horaire autorisée.";
+  }
 
   const joursOk = joursAutorisesJoursTravail(demand.contraintesProfesseur);
   if (joursOk !== null && joursOk.size > 0 && !joursOk.has(slot.jour)) {
-    return false;
+    return "Jour non autorisé par la contrainte « jours de travail ».";
   }
   if (joursOk !== null && joursOk.size === 0) {
-    return false;
+    return "Aucun jour de travail compatible (contraintes « jours de travail »).";
   }
 
   if (overlapsProfCreneauxInterdits(slot, demand.contraintesProfesseur)) {
-    return false;
+    return "Chevauchement avec une plage « créneaux interdits » du professeur.";
   }
 
   const finMaxJour = effHeureFinMaxPourJour(
@@ -389,22 +396,26 @@ function canPlaceSession(
     slot.jour
   );
   if (finMaxJour !== null && slot.heureFin > finMaxJour) {
-    return false;
+    return `Heure de fin au-delà de la limite autorisée pour ce jour (≤ ${finMaxJour} h).`;
   }
 
   if (demand.salleMode === "liste") {
     const sid = trial.assignedSalleId;
-    if (sid == null) return false;
-    if (!demand.salleIds.includes(sid)) return false;
+    if (sid == null) {
+      return "Salle manquante : la matière est en mode liste de salles.";
+    }
+    if (!demand.salleIds.includes(sid)) {
+      return "Salle assignée hors de la liste autorisée pour cette matière.";
+    }
   } else if (trial.assignedSalleId !== undefined) {
-    return false;
+    return "Cette matière n’utilise pas la liste de salles ; aucune salle ne doit être assignée.";
   }
 
   for (const other of placed) {
     if (other.statut !== "scheduled" || other.assignedSlot == null) continue;
     if (other.professeurId !== trial.professeurId) continue;
     if (intervalsOverlap(slot, other.assignedSlot)) {
-      return false;
+      return "Chevauchement avec un autre cours du même professeur.";
     }
   }
 
@@ -412,7 +423,7 @@ function canPlaceSession(
     if (other.statut !== "scheduled" || other.assignedSlot == null) continue;
     if (other.formationId !== trial.formationId) continue;
     if (intervalsOverlap(slot, other.assignedSlot)) {
-      return false;
+      return "Chevauchement avec un autre cours de la même formation.";
     }
   }
 
@@ -423,7 +434,7 @@ function canPlaceSession(
       if (other.assignedSalleId === undefined) continue;
       if (other.assignedSalleId !== sid) continue;
       if (intervalsOverlap(slot, other.assignedSlot)) {
-        return false;
+        return "La même salle est déjà occupée sur ce créneau.";
       }
     }
   }
@@ -440,7 +451,9 @@ function canPlaceSession(
         sw,
         slot.jour
       ) + 1;
-    if (c > vmax) return false;
+    if (c > vmax) {
+      return "Dépasse le nombre maximal de cours de cette matière pour ce jour (contrainte volume / jour).";
+    }
   }
 
   const bmax = effBlocConsecutifMax(demand);
@@ -456,7 +469,9 @@ function canPlaceSession(
       slot
     );
     const streak = longestConsecutiveStreak(hoursSorted);
-    if (streak > bmax) return false;
+    if (streak > bmax) {
+      return "Dépasse la durée maximale de bloc consécutif pour cette matière.";
+    }
   }
 
   const vmaxHjour = effVolumeHeuresJourMax(demand.contraintesProfesseur);
@@ -465,7 +480,9 @@ function canPlaceSession(
     const totalJour =
       sumDureeProfJour(placed, trial.professeurId, sw, slot.jour) +
       trial.duree;
-    if (totalJour > vmaxHjour) return false;
+    if (totalJour > vmaxHjour) {
+      return "Dépasse le volume d’heures maximal autorisé pour le professeur sur une journée.";
+    }
   }
 
   const vmaxHsem = effVolumeHeuresSemaineMax(demand.contraintesProfesseur);
@@ -473,10 +490,21 @@ function canPlaceSession(
     const sw = slotSemaine(slot);
     const totalSem =
       sumDureeProfSemaine(placed, trial.professeurId, sw) + trial.duree;
-    if (totalSem > vmaxHsem) return false;
+    if (totalSem > vmaxHsem) {
+      return "Dépasse le volume d’heures maximal autorisé pour le professeur sur une semaine.";
+    }
   }
 
-  return true;
+  return null;
+}
+
+function canPlaceSession(
+  trial: PlanningSession,
+  demand: PlanningDemand,
+  placed: readonly PlanningSession[],
+  grid: PlanningGridConfig
+): boolean {
+  return sessionPlacementBlocker(trial, demand, placed, grid) === null;
 }
 
 /**

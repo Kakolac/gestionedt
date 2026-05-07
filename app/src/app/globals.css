@@ -38,3 +38,24 @@ body {
     animation: none;
   }
 }
+
+/** Contour pointillé vert des cibles d’interversion : `stroke-dashoffset` reste coûteux en masse ; calque composé + pas un peu plus longs. */
+@keyframes planning-swap-dash-shift {
+  to {
+    stroke-dashoffset: -38;
+  }
+}
+
+.planning-swap-target-svg {
+  transform: translateZ(0);
+}
+
+.planning-swap-target-dash {
+  animation: planning-swap-dash-shift 2.2s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .planning-swap-target-dash {
+    animation: none;
+  }
+}

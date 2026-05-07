@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, type MouseEvent } from "react";
+import { Fragment, memo, useMemo, type MouseEvent } from "react";
 import type {
   PlanningData,
   PlanningGridConfig,
@@ -38,7 +38,7 @@ export type PlanningGridProps = {
   highlightSessionIds?: ReadonlySet<string>;
   /**
    * Ids des séances des blocs **visibles** avec lesquels un échange avec la sélection serait accepté
-   * (`trySwapMergedBlockSessions`). Entourage vert sur la grille (hors bloc déjà surligné indigo).
+   * (`trySwapMergedBlockSessions`). Contour **vert en pointillés animés** sur la grille (hors bloc déjà surligné indigo).
    */
   swapTargetSessionIds?: ReadonlySet<string>;
   /**
@@ -89,22 +89,14 @@ function blockIsSwapTarget(
   return block.sessions.some((s) => swapTargetSessionIds.has(s.id));
 }
 
-function MergedBlockCard({
+function MergedBlockCardInner({
   block,
   planningData,
   professorColorOverride,
   highlighted,
   swapTargetHighlighted,
   onContextMenu,
-}: {
-  block: VerticalMergedBlock;
-  planningData: PlanningData;
-  professorColorOverride?: PlanningProfessorColorOverride | null;
-  highlighted?: boolean;
-  /** Cible d’interversion possible (vert) ; ignoré si `highlighted`. */
-  swapTargetHighlighted?: boolean;
-  onContextMenu?: (event: MouseEvent) => void;
-}) {
+}: MergedBlockCardProps) {
   const first = block.sessions[0];
   const d = planningData.demands.find((x) => x.id === first.demandId);
   const accent = resolveProfessorAccent(
@@ -151,7 +143,7 @@ function MergedBlockCard({
   const ringClass = highlighted
     ? "border-indigo-400 ring-[3px] ring-indigo-500/85 ring-offset-2 ring-offset-white"
     : swapTargetHighlighted
-      ? "border-emerald-500 ring-[3px] ring-emerald-500/90 ring-offset-2 ring-offset-white"
+      ? "relative border-slate-200/70"
       : "border-slate-200/70";
 
   return (
@@ -174,6 +166,27 @@ function MergedBlockCard({
           : undefined
       }
     >
+      {swapTargetHighlighted ? (
+        <svg
+          className="planning-swap-target-svg pointer-events-none absolute inset-0 h-full w-full overflow-visible text-emerald-500"
+          aria-hidden
+        >
+          <rect
+            className="planning-swap-target-dash"
+            x="2"
+            y="2"
+            width="calc(100% - 4px)"
+            height="calc(100% - 4px)"
+            rx="12"
+            ry="12"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeDasharray="12 7"
+            shapeRendering="optimizeSpeed"
+          />
+        </svg>
+      ) : null}
       <p
         className="text-[clamp(0.68rem,0.95vw,0.78rem)] font-semibold uppercase tracking-[0.12em]"
         style={{ color: accent.labelColor }}
@@ -254,6 +267,45 @@ function MergedBlockCard({
     </article>
   );
 }
+
+type MergedBlockCardProps = {
+  block: VerticalMergedBlock;
+  planningData: PlanningData;
+  professorColorOverride?: PlanningProfessorColorOverride | null;
+  highlighted?: boolean;
+  /** Cible d’interversion possible (contour vert pointillé animé) ; ignoré si `highlighted`. */
+  swapTargetHighlighted?: boolean;
+  onContextMenu?: (event: MouseEvent) => void;
+};
+
+function mergedBlockCardPropsEqual(
+  prev: MergedBlockCardProps,
+  next: MergedBlockCardProps
+): boolean {
+  if (prev.planningData !== next.planningData) return false;
+  if (prev.highlighted !== next.highlighted) return false;
+  if (prev.swapTargetHighlighted !== next.swapTargetHighlighted) return false;
+  if (prev.professorColorOverride !== next.professorColorOverride) return false;
+  if (prev.onContextMenu !== next.onContextMenu) return false;
+  const pb = prev.block;
+  const nb = next.block;
+  if (
+    pb.startHour !== nb.startHour ||
+    pb.endHour !== nb.endHour ||
+    pb.formationId !== nb.formationId ||
+    pb.matiereId !== nb.matiereId ||
+    pb.professeurId !== nb.professeurId
+  ) {
+    return false;
+  }
+  if (pb.sessions.length !== nb.sessions.length) return false;
+  for (let i = 0; i < pb.sessions.length; i += 1) {
+    if (pb.sessions[i]!.id !== nb.sessions[i]!.id) return false;
+  }
+  return true;
+}
+
+const MergedBlockCard = memo(MergedBlockCardInner, mergedBlockCardPropsEqual);
 
 /** Plusieurs cours **même début** (ex. formation A & B en parallèle 10h–12h) : colonnes égales, pleine hauteur du `grid-row` fusionné. */
 function StackedStartBlocks({
