@@ -8,9 +8,17 @@ import type {
 } from "@/lib/planning/planning.types";
 import { nombreSemainesGrid, slotSemaine } from "@/lib/planning/planning-slot";
 import {
+  buildVerticalMergedBlocks,
+  formationSortLabel,
+  type VerticalMergedBlock,
+} from "@/lib/planning/planning-merged-blocks";
+import {
   resolveProfessorAccent,
   type PlanningProfessorColorOverride,
 } from "@/lib/planning/planning-professor-accent";
+
+export type { VerticalMergedBlock } from "@/lib/planning/planning-merged-blocks";
+export { buildVerticalMergedBlocks } from "@/lib/planning/planning-merged-blocks";
 
 export type PlanningGridProps = {
   planningData: PlanningData;
@@ -29,12 +37,20 @@ export type PlanningGridProps = {
   /** Ids des séances du bloc actuellement sélectionné pour un échange manuel. */
   highlightSessionIds?: ReadonlySet<string>;
   /**
+   * Ids des séances des blocs **visibles** avec lesquels un échange avec la sélection serait accepté
+   * (`trySwapMergedBlockSessions`). Entourage vert sur la grille (hors bloc déjà surligné indigo).
+   */
+  swapTargetSessionIds?: ReadonlySet<string>;
+  /**
    * Surcharge couleur par `professeurId` : teinte pastel (palette ou raccourci) ou hex exact (couleur libre).
    */
   professorColorOverrideByProfId?: Readonly<
     Record<string, PlanningProfessorColorOverride>
   >;
-  /** Clic droit sur un bloc (carte fusionnée). */
+  /**
+   * Clic droit sur une carte fusionnée (`MergedBlockCard`) : événement après `preventDefault`
+   * sur le menu natif. Le parent peut ouvrir `PlanningGridContextMenu` (voir `docs/planning-grid-context-menu.md`).
+   */
   onBlockContextMenu?: (event: MouseEvent, block: VerticalMergedBlock) => void;
 };
 
@@ -47,78 +63,6 @@ const JOUR_LABEL: Record<number, string> = {
   6: "Samedi",
   7: "Dimanche",
 };
-
-/** Bloc vertical : heures consécutives même formation + matière + prof (plusieurs séances fusionnées). */
-export type VerticalMergedBlock = {
-  startHour: number;
-  endHour: number;
-  formationId: string;
-  matiereId: string;
-  professeurId: string;
-  sessions: PlanningSession[];
-};
-
-function formationSortLabel(planningData: PlanningData, formationId: string): string {
-  const d = planningData.demands.find((x) => x.formationId === formationId);
-  if (d?.formationNom?.trim()) return d.formationNom.trim().toLowerCase();
-  const f = planningData.references.formations.find((x) => x.id === formationId);
-  return (f?.nom ?? formationId).trim().toLowerCase();
-}
-
-/**
- * Regroupe les séances planifiées d’un même jour lorsque la fin d’un bloc coïncide
- * avec le début du suivant et que formation + matière + professeur sont identiques.
- * À heure identique, ordre stable par **nom de formation** (pas par ObjectId) pour les colonnes parallèles.
- */
-export function buildVerticalMergedBlocks(
-  planningData: PlanningData,
-  sessions: readonly PlanningSession[],
-  jour: number
-): VerticalMergedBlock[] {
-  const list = sessions
-    .filter(
-      (s) =>
-        s.statut === "scheduled" &&
-        s.assignedSlot != null &&
-        s.assignedSlot.jour === jour
-    )
-    .slice()
-    .sort((a, b) => {
-      const da = a.assignedSlot!.heureDebut - b.assignedSlot!.heureDebut;
-      if (da !== 0) return da;
-      const fa = formationSortLabel(planningData, a.formationId);
-      const fb = formationSortLabel(planningData, b.formationId);
-      const dn = fa.localeCompare(fb, "fr", { sensitivity: "base" });
-      if (dn !== 0) return dn;
-      return a.id.localeCompare(b.id);
-    });
-
-  const out: VerticalMergedBlock[] = [];
-  for (const s of list) {
-    const sl = s.assignedSlot!;
-    const last = out[out.length - 1];
-    const sameKey =
-      last != null &&
-      last.formationId === s.formationId &&
-      last.matiereId === s.matiereId &&
-      last.professeurId === s.professeurId;
-    const contiguous = last != null && last.endHour === sl.heureDebut;
-    if (last != null && sameKey && contiguous) {
-      last.endHour = sl.heureFin;
-      last.sessions.push(s);
-    } else {
-      out.push({
-        startHour: sl.heureDebut,
-        endHour: sl.heureFin,
-        formationId: s.formationId,
-        matiereId: s.matiereId,
-        professeurId: s.professeurId,
-        sessions: [s],
-      });
-    }
-  }
-  return out;
-}
 
 function blocksCoveringHour(
   blocks: readonly VerticalMergedBlock[],
@@ -135,17 +79,30 @@ function blockIsHighlighted(
   return block.sessions.some((s) => highlightSessionIds.has(s.id));
 }
 
+function blockIsSwapTarget(
+  block: VerticalMergedBlock,
+  swapTargetSessionIds: ReadonlySet<string> | undefined,
+  highlightSessionIds: ReadonlySet<string> | undefined
+): boolean {
+  if (swapTargetSessionIds == null || swapTargetSessionIds.size === 0) return false;
+  if (blockIsHighlighted(block, highlightSessionIds)) return false;
+  return block.sessions.some((s) => swapTargetSessionIds.has(s.id));
+}
+
 function MergedBlockCard({
   block,
   planningData,
   professorColorOverride,
   highlighted,
+  swapTargetHighlighted,
   onContextMenu,
 }: {
   block: VerticalMergedBlock;
   planningData: PlanningData;
   professorColorOverride?: PlanningProfessorColorOverride | null;
   highlighted?: boolean;
+  /** Cible d’interversion possible (vert) ; ignoré si `highlighted`. */
+  swapTargetHighlighted?: boolean;
   onContextMenu?: (event: MouseEvent) => void;
 }) {
   const first = block.sessions[0];
@@ -191,12 +148,16 @@ function MergedBlockCard({
     .filter(Boolean)
     .join(" · ");
 
+  const ringClass = highlighted
+    ? "border-indigo-400 ring-[3px] ring-indigo-500/85 ring-offset-2 ring-offset-white"
+    : swapTargetHighlighted
+      ? "border-emerald-500 ring-[3px] ring-emerald-500/90 ring-offset-2 ring-offset-white"
+      : "border-slate-200/70";
+
   return (
     <article
       className={
-        highlighted
-          ? "flex h-full min-h-0 min-w-0 flex-col justify-center rounded-xl border border-indigo-400 py-2 pl-3 pr-2 shadow-[0_8px_22px_rgba(15,23,42,0.08)] ring-[3px] ring-indigo-500/85 ring-offset-2 ring-offset-white"
-          : "flex h-full min-h-0 min-w-0 flex-col justify-center rounded-xl border border-slate-200/70 py-2 pl-3 pr-2 shadow-[0_8px_22px_rgba(15,23,42,0.08)]"
+        `flex h-full min-h-0 min-w-0 flex-col justify-center rounded-xl border py-2 pl-3 pr-2 shadow-[0_8px_22px_rgba(15,23,42,0.08)] ${ringClass}`
       }
       style={{
         borderLeftWidth: 4,
@@ -300,6 +261,7 @@ function StackedStartBlocks({
   planningData,
   professorColorOverrideByProfId,
   highlightSessionIds,
+  swapTargetSessionIds,
   onBlockContextMenu,
 }: {
   blocks: VerticalMergedBlock[];
@@ -308,6 +270,7 @@ function StackedStartBlocks({
     Record<string, PlanningProfessorColorOverride>
   >;
   highlightSessionIds?: ReadonlySet<string>;
+  swapTargetSessionIds?: ReadonlySet<string>;
   onBlockContextMenu?: (event: MouseEvent, block: VerticalMergedBlock) => void;
 }) {
   const n = blocks.length;
@@ -330,6 +293,11 @@ function StackedStartBlocks({
               professorColorOverrideByProfId?.[b.professeurId]
             }
             highlighted={blockIsHighlighted(b, highlightSessionIds)}
+            swapTargetHighlighted={blockIsSwapTarget(
+              b,
+              swapTargetSessionIds,
+              highlightSessionIds
+            )}
             onContextMenu={
               onBlockContextMenu != null
                 ? (e) => onBlockContextMenu(e, b)
@@ -353,6 +321,7 @@ export function PlanningGrid({
   formationAfficheeId,
   flexibleHeight = false,
   highlightSessionIds,
+  swapTargetSessionIds,
   professorColorOverrideByProfId,
   onBlockContextMenu,
 }: PlanningGridProps) {
@@ -493,6 +462,11 @@ export function PlanningGrid({
                         professorColorOverrideByProfId?.[b.professeurId]
                       }
                       highlighted={blockIsHighlighted(b, highlightSessionIds)}
+                      swapTargetHighlighted={blockIsSwapTarget(
+                        b,
+                        swapTargetSessionIds,
+                        highlightSessionIds
+                      )}
                       onContextMenu={
                         onBlockContextMenu != null
                           ? (e) => onBlockContextMenu(e, b)
@@ -525,6 +499,7 @@ export function PlanningGrid({
                       professorColorOverrideByProfId
                     }
                     highlightSessionIds={highlightSessionIds}
+                    swapTargetSessionIds={swapTargetSessionIds}
                     onBlockContextMenu={onBlockContextMenu}
                   />
                 </div>

@@ -14,6 +14,7 @@ import {
   type VerticalMergedBlock,
 } from "@/components/planning/planning-grid";
 import { PlanningProfessorColorPickPopover } from "@/components/planning/PlanningProfessorColorPickPopover";
+import { listMergedBlocksForGridView } from "@/lib/planning/planning-grid-view-blocks";
 import { normalizePlanningExport } from "@/lib/planning/planning-normalize";
 import { trySwapMergedBlockSessions } from "@/lib/planning/planning-manual-swap";
 import {
@@ -323,6 +324,42 @@ function PlanningBuilderBody({
 
   const formationFiltreTrim = formationAfficheeIdFilter.trim();
 
+  const swapTargetSessionIds = useMemo(() => {
+    if (swapSelectionIds == null || swapSelectionIds.length === 0) {
+      return undefined;
+    }
+    const selectedSessions = planningData.sessions.filter((s) =>
+      swapSelectionIds.includes(s.id)
+    );
+    if (selectedSessions.length === 0) return undefined;
+    const visibleBlocks = listMergedBlocksForGridView(
+      planningData,
+      gridEffectif,
+      semaineAffichee,
+      formationFiltreTrim !== "" ? formationFiltreTrim : undefined
+    );
+    const ids = new Set<string>();
+    for (const b of visibleBlocks) {
+      if (blocksSameSessionSet(swapSelectionIds, b)) continue;
+      const res = trySwapMergedBlockSessions(
+        selectedSessions,
+        b.sessions,
+        planningData.sessions
+      );
+      if (res.ok) {
+        for (const s of b.sessions) ids.add(s.id);
+      }
+    }
+    if (ids.size === 0) return undefined;
+    return ids;
+  }, [
+    formationFiltreTrim,
+    gridEffectif,
+    planningData,
+    semaineAffichee,
+    swapSelectionIds,
+  ]);
+
   const scheduledAffiche = useMemo(() => {
     if (formationFiltreTrim === "") return scheduled;
     return scheduled.filter((s) => s.formationId === formationFiltreTrim);
@@ -539,6 +576,7 @@ function PlanningBuilderBody({
             }
             flexibleHeight={isFullscreen}
             highlightSessionIds={highlightSessionIds}
+            swapTargetSessionIds={swapTargetSessionIds}
             professorColorOverrideByProfId={profColorOverrideByProfId}
             onBlockContextMenu={onBlockContextMenu}
           />

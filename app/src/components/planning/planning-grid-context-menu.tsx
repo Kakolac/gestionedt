@@ -2,29 +2,36 @@
 
 import { useEffect, useRef } from "react";
 
+/**
+ * Props du menu contextuel fixe sur les actions d’un bloc (`VerticalMergedBlock`) sur la grille.
+ * Voir `docs/planning-grid-context-menu.md`.
+ */
 export type PlanningGridContextMenuProps = {
   open: boolean;
   x: number;
   y: number;
-  /** Au moins un bloc est sélectionné pour échange. */
+  /** Au moins un bloc est sélectionné pour échange (`swapSelectionIds` non vide côté parent). */
   hasSelection: boolean;
-  /** « Intervertir » pertinent (sélection + bloc cible différent). */
+  /** « Intervertir » activé : sélection présente et bloc cible ≠ bloc sélectionné. */
   canSwap: boolean;
-  /** Affiche l’entrée couleur professeur (grille planning). */
+  /** Affiche l’entrée couleur professeur (ex. `PlanningBuilder` + popover). */
   showProfessorColorPick?: boolean;
+  /** Fermer le menu (Échap, clic extérieur ou après action terminée). */
   onClose: () => void;
-  /** Enregistrer le bloc sous le curseur comme sélection. */
+  /** Mémoriser le bloc du dernier clic droit comme sélection d’échange. */
   onSelectBloc: () => void;
-  /** Choisir une couleur pour le professeur du bloc sous le curseur. */
+  /** Ouvre le choix couleur pour le `professeurId` du bloc cible ; le parent ferme ce menu. */
   onPickProfessorColor?: () => void;
-  /** Échanger avec la sélection (bloc sous le curseur = cible). */
+  /** Échanger créneaux avec le bloc actuellement sous le curseur (cible). */
   onSwapWithSelection: () => void;
-  /** Effacer la sélection sans fermer si besoin — parent peut aussi fermer menu. */
+  /** Réinitialiser la sélection d’échange. */
   onClearSelection: () => void;
 };
 
 /**
- * Menu contextuel léger (pas Radix) pour actions sur un bloc de la grille planning.
+ * Menu contextuel léger (pas Radix) : Sélectionner, optionnellement Couleur du professeur…,
+ * Intervertir avec la sélection, Annuler la sélection. Fermeture Échap ou clic hors menu.
+ * Documentation : fichier `docs/planning-grid-context-menu.md` à la racine du dépôt.
  */
 export function PlanningGridContextMenu({
   open,
