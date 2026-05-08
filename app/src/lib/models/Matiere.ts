@@ -1,8 +1,28 @@
 import mongoose, { Schema, model, models, type InferSchemaType } from "mongoose";
+import { MATIERE_CONTRAINTE_KINDS } from "@/lib/matiereContraintes.shared";
 
 /** Mode d’attachement des salles à la matière (référentiel). */
 export const MATIERE_SALLE_MODE_VALUES = ["classique", "liste"] as const;
 export type MatiereSalleMode = (typeof MATIERE_SALLE_MODE_VALUES)[number];
+
+const MatiereContrainteSchema = new Schema(
+  {
+    kind: {
+      type: String,
+      enum: [...MATIERE_CONTRAINTE_KINDS],
+      required: true,
+    },
+    priorite: { type: Number, required: true },
+    actif: { type: Boolean, default: true },
+    /** `plage_horaire` : matin ou après-midi (frontière configurable côté shared). */
+    plage: {
+      type: String,
+      enum: ["matin", "apres_midi"],
+      default: undefined,
+    },
+  },
+  { _id: true }
+);
 
 const MatiereSchema = new Schema(
   {
@@ -23,6 +43,11 @@ const MatiereSchema = new Schema(
     /** Références `Salle` lorsque `salleMode === "liste"` (sinon tableau vide). */
     salleIds: {
       type: [{ type: Schema.Types.ObjectId, ref: "Salle" }],
+      default: [],
+    },
+    /** Contraintes de planification (référentiel ; placement glouton). */
+    contraintes: {
+      type: [MatiereContrainteSchema],
       default: [],
     },
   },

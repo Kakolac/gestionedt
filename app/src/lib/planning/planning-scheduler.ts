@@ -1,3 +1,7 @@
+import {
+  matiereContrainteEstStricte,
+  slotMatchesPlageHoraire,
+} from "@/lib/matiereContraintes.shared";
 import type { ProfesseurContrainteWire } from "@/lib/professeurContraintes.shared";
 import {
   buildWeeklyTemplatePlanningData,
@@ -394,6 +398,21 @@ export function sessionPlacementBlocker(
     return "Chevauchement avec une plage « créneaux interdits » du professeur.";
   }
 
+  for (const c of demand.contraintesMatiere) {
+    if (!c.actif || c.kind !== "plage_horaire") {
+      continue;
+    }
+    if (!matiereContrainteEstStricte(c.priorite)) {
+      continue;
+    }
+    if (
+      slotMatchesPlageHoraire(slot.heureDebut, slot.heureFin, c.plage)
+    ) {
+      continue;
+    }
+    return "Hors de la plage horaire demandée pour cette matière (contrainte stricte « plage horaire »).";
+  }
+
   const finMaxJour = effHeureFinMaxPourJour(
     demand.contraintesProfesseur,
     slot.jour
@@ -544,6 +563,13 @@ export function scoreSessionContrainte(
   const jours = joursAutorisesJoursTravail(demand.contraintesProfesseur);
   if (jours !== null) {
     score += (7 - jours.size) * 5;
+  }
+  const activesMatiere = demand.contraintesMatiere.filter((c) => c.actif);
+  score += activesMatiere.length * 8;
+  for (const c of demand.contraintesMatiere) {
+    if (c.actif && c.kind === "plage_horaire") {
+      score += 7;
+    }
   }
   return score;
 }

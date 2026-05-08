@@ -1,4 +1,9 @@
 import {
+  isMatiereContrainteKind,
+  isMatierePlageHoraire,
+  type MatiereContrainteWire,
+} from "@/lib/matiereContraintes.shared";
+import {
   isProfesseurContrainteKind,
   MAX_CRENEAUX_PAR_CONTRAINTE,
   MAX_HEURES_PLAFOND_JOUR,
@@ -205,17 +210,53 @@ function parseFormation(raw: unknown): FormationReference | null {
   return { id: canonPlanningId(id), nom, lignes };
 }
 
+/** Priorité contrainte matière : tolère nombre décimal issu JSON/BDD (`Math.trunc`). */
+function parsePrioriteContrainteMatiere(raw: unknown): number | null {
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    const n = Math.trunc(raw);
+    return n >= 0 ? n : null;
+  }
+  if (typeof raw === "string" && raw.trim() !== "") {
+    const n = Number.parseInt(raw.trim(), 10);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+  return null;
+}
+
+function parseMatiereContrainte(raw: unknown): MatiereContrainteWire | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const o = raw as Record<string, unknown>;
+  const kind = asString(o.kind);
+  if (!kind || !isMatiereContrainteKind(kind)) return null;
+  const priorite = parsePrioriteContrainteMatiere(o.priorite);
+  if (priorite === null) return null;
+  const actif = o.actif === false ? false : true;
+  if (kind !== "plage_horaire") return null;
+  const plage = asString(o.plage);
+  if (!plage || !isMatierePlageHoraire(plage)) return null;
+  return { kind: "plage_horaire", priorite, actif, plage };
+}
+
 function parseMatiere(raw: unknown): MatiereReference | null {
   if (typeof raw !== "object" || raw === null) return null;
   const o = raw as Record<string, unknown>;
-  const id = asString(o._id);
+  const id = asString(o._id) ?? asString(o.id);
   if (!id) return null;
   const nom = asString(o.nom) ?? "(matière)";
+  const contraintesRaw = o.contraintes;
+  const contraintes: MatiereContrainteWire[] = [];
+  if (Array.isArray(contraintesRaw)) {
+    for (const c of contraintesRaw) {
+      const p = parseMatiereContrainte(c);
+      if (p) contraintes.push(p);
+    }
+  }
   return {
     id: canonPlanningId(id),
     nom,
     salleMode: parseSalleMode(o.salleMode),
     salleIds: parseObjectIdsArray(o.salleIds),
+    contraintes,
   };
 }
 
@@ -508,6 +549,7 @@ export function normalizePlanningExport(
           salleMode: matiere.salleMode,
           salleIds: [...matiere.salleIds],
           contraintesProfesseur: prof.contraintes.map((c) => ({ ...c })),
+          contraintesMatiere: matiere.contraintes.map((c) => ({ ...c })),
         });
 
         for (const paquet of seances) {

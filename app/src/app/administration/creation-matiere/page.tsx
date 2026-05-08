@@ -8,6 +8,7 @@ import { Matiere } from "@/lib/models/Matiere";
 import type { SalleKind } from "@/lib/models/Salle";
 import { Salle } from "@/lib/models/Salle";
 import { PERMISSION_CREATION_MATIERE } from "@/lib/permissions/keys";
+import { leanWireFromMatiereContraintesDoc } from "@/lib/matiereContraintes";
 import { GestionMatieresPanel } from "@/components/administration/GestionMatieresPanel";
 
 export default async function CreationMatierePage() {
@@ -27,7 +28,7 @@ export default async function CreationMatierePage() {
   const [matieresLean, sallesLean] = await Promise.all([
     Matiere.find({})
       .sort({ nom: 1 })
-      .select("nom description salleMode salleIds")
+      .select("nom description salleMode salleIds contraintes")
       .lean(),
     Salle.find({}).sort({ nom: 1 }).select("nom kind").lean(),
   ]);
@@ -45,6 +46,7 @@ export default async function CreationMatierePage() {
       salleMode: mode as MatiereSalleMode,
       salleIds:
         mode === "liste" ? salleIds : [],
+      contraintes: leanWireFromMatiereContraintesDoc(m.contraintes),
     };
   });
 

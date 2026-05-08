@@ -1,3 +1,4 @@
+import type { MatiereContrainteWire } from "@/lib/matiereContraintes.shared";
 import type { ProfesseurContrainteWire } from "@/lib/professeurContraintes.shared";
 
 /** Version du document `planningData` produit par la normalisation. */
@@ -63,6 +64,8 @@ export type MatiereReference = {
   nom: string;
   salleMode: PlanningSalleMode;
   salleIds: string[];
+  /** Contraintes référentiel matière (copiées sur chaque `PlanningDemand` comme `contraintesMatiere`). */
+  contraintes: MatiereContrainteWire[];
 };
 
 export type ProfesseurReference = {
@@ -104,6 +107,7 @@ export type PlanningDemand = {
   salleMode: PlanningSalleMode;
   salleIds: string[];
   contraintesProfesseur: ProfesseurContrainteWire[];
+  contraintesMatiere: MatiereContrainteWire[];
 };
 
 /** Créneau assigné : semaine 1-based × jour ISO × intervalle d’heures entières [heureDebut, heureFin) (fin exclusive). */

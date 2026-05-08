@@ -27,6 +27,15 @@ function resumeColonnesSalles(
   return joined.length > 56 ? `${noms.length} salle(s)` : joined;
 }
 
+function libelleContraintesActives(row: MatiereRow): string {
+  const n = row.contraintes.filter((c) => c.actif).length;
+  const total = row.contraintes.length;
+  if (total === 0) {
+    return "—";
+  }
+  return n === total ? `${n} active(s)` : `${n} active(s) / ${total}`;
+}
+
 type Props = {
   rows: MatiereRow[];
   salleOptions: SalleOption[];
@@ -74,6 +83,9 @@ export function GestionMatieresPanel({ rows, salleOptions }: Props) {
               </th>
               <th className="px-4 py-3 font-semibold text-slate-800">Salles</th>
               <th className="px-4 py-3 font-semibold text-slate-800">
+                Contraintes
+              </th>
+              <th className="px-4 py-3 font-semibold text-slate-800">
                 Actions
               </th>
             </tr>
@@ -81,7 +93,7 @@ export function GestionMatieresPanel({ rows, salleOptions }: Props) {
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td className="px-4 py-6 text-slate-500" colSpan={4}>
+                <td className="px-4 py-6 text-slate-500" colSpan={5}>
                   Aucune matière enregistrée. Utilisez « Nouvelle matière » pour
                   en ajouter.
                 </td>
@@ -100,6 +112,9 @@ export function GestionMatieresPanel({ rows, salleOptions }: Props) {
                   </td>
                   <td className="max-w-[min(42vw,16rem)] px-4 py-3 text-xs text-slate-700">
                     {resumeColonnesSalles(row, nomSalleParId)}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-700">
+                    {libelleContraintesActives(row)}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-2">
@@ -138,7 +153,7 @@ export function GestionMatieresPanel({ rows, salleOptions }: Props) {
       <ModifierMatiereModal
         key={
           editRow
-            ? `modifier-${editRow.id}-${editRow.salleMode}-${stableSalleIdsKey(editRow.salleIds)}`
+            ? `modifier-${editRow.id}-${editRow.salleMode}-${stableSalleIdsKey(editRow.salleIds)}-${JSON.stringify(editRow.contraintes)}`
             : "modifier-closed"
         }
         open={editRow != null}

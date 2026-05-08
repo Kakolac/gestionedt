@@ -1,3 +1,7 @@
+import {
+  matiereContrainteEstStricte,
+  slotMatchesPlageHoraire,
+} from "@/lib/matiereContraintes.shared";
 import type {
   AssignedSlot,
   PlanningDemand,
@@ -14,6 +18,12 @@ const W_SALLE_SWITCH = 8;
 const W_HEURES_DEJA_EN_SEMAINE = 5;
 /** Ancrage round-robin : la k-ième séance traitée favorise la semaine `(k % N) + 1` (avec N = horizon). */
 const W_ANCRE_SEMAINE_ROUND_ROBIN = 4;
+
+/**
+ * Désincitation à violer une plage horaire matière lorsque la contrainte est « souple » (priorité &gt; max strict).
+ * Poids élevé pour faire gagner la plage préférée dès que plusieurs créneaux sont valables au titre des contraintes **dures**.
+ */
+const W_MATIERE_PLAGE_SOUPLE = 140;
 
 function hoursInSlot(slot: AssignedSlot): number[] {
   const xs: number[] = [];
@@ -147,6 +157,21 @@ export function softPlacementCost(
         if (s.assignedSalleId !== sid) cost += W_SALLE_SWITCH;
       }
     }
+  }
+
+  for (const c of demand.contraintesMatiere) {
+    if (!c.actif || c.kind !== "plage_horaire") {
+      continue;
+    }
+    if (matiereContrainteEstStricte(c.priorite)) {
+      continue;
+    }
+    if (
+      slotMatchesPlageHoraire(slot.heureDebut, slot.heureFin, c.plage)
+    ) {
+      continue;
+    }
+    cost += W_MATIERE_PLAGE_SOUPLE + Math.max(0, 120 - c.priorite);
   }
 
   return cost;

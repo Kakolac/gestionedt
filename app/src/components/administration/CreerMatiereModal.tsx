@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useRef, useState } from "react";
 import {
   createMatiereAction,
@@ -9,6 +10,7 @@ import {
   MatiereSallesChecklist,
   type SalleOption,
 } from "@/components/administration/MatiereSallesChecklist";
+import { MatiereContraintesEditor } from "@/components/administration/MatiereContraintesEditor";
 import type { MatiereSalleMode } from "@/lib/models/Matiere";
 
 type Props = {
@@ -20,6 +22,7 @@ type Props = {
 const initial: MatiereActionState | undefined = undefined;
 
 export function CreerMatiereModal({ open, onClose, salleOptions }: Props) {
+  const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
   const [salleMode, setSalleMode] = useState<MatiereSalleMode>("classique");
   const [state, formAction, pending] = useActionState(
@@ -28,11 +31,21 @@ export function CreerMatiereModal({ open, onClose, salleOptions }: Props) {
   );
 
   useEffect(() => {
-    if (state?.ok) {
-      formRef.current?.reset();
-      onClose();
+    if (!state?.ok) {
+      return;
     }
-  }, [state, onClose]);
+    let cancelled = false;
+    void (async () => {
+      await router.refresh();
+      if (!cancelled) {
+        formRef.current?.reset();
+        onClose();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [state, onClose, router]);
 
   if (!open) {
     return null;
@@ -52,7 +65,7 @@ export function CreerMatiereModal({ open, onClose, salleOptions }: Props) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="creer-matiere-titre"
-        className="max-h-[90vh] w-full max-w-[min(92vw,28rem)] overflow-y-auto rounded-2xl border border-white/60 bg-white p-6 shadow-xl"
+        className="max-h-[90vh] w-full max-w-[min(92vw,34rem)] overflow-y-auto rounded-2xl border border-white/60 bg-white p-6 shadow-xl"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <h2
@@ -74,9 +87,9 @@ export function CreerMatiereModal({ open, onClose, salleOptions }: Props) {
               type="text"
               required
               maxLength={200}
-              disabled={pending}
+              readOnly={pending}
               autoComplete="off"
-              className="rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/30 disabled:opacity-60"
+              className="rounded-xl border border-slate-200 px-3 py-2 outline-none read-only:pointer-events-none read-only:bg-slate-50 read-only:opacity-80 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/30"
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
@@ -87,12 +100,18 @@ export function CreerMatiereModal({ open, onClose, salleOptions }: Props) {
               name="description"
               rows={3}
               maxLength={2000}
-              disabled={pending}
-              className="resize-y rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/30 disabled:opacity-60"
+              readOnly={pending}
+              className="resize-y rounded-xl border border-slate-200 px-3 py-2 outline-none read-only:pointer-events-none read-only:bg-slate-50 read-only:opacity-80 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/30"
             />
           </label>
 
-          <fieldset className="flex flex-col gap-2 text-sm">
+          <fieldset
+            className={
+              pending
+                ? "pointer-events-none flex flex-col gap-2 text-sm opacity-70"
+                : "flex flex-col gap-2 text-sm"
+            }
+          >
             <legend className="font-medium text-slate-800">Salles</legend>
             <label className="flex cursor-pointer items-center gap-2">
               <input
@@ -100,7 +119,6 @@ export function CreerMatiereModal({ open, onClose, salleOptions }: Props) {
                 name="salleMode"
                 value="classique"
                 checked={salleMode === "classique"}
-                disabled={pending}
                 onChange={() => setSalleMode("classique")}
                 className="text-indigo-600"
               />
@@ -112,7 +130,6 @@ export function CreerMatiereModal({ open, onClose, salleOptions }: Props) {
                 name="salleMode"
                 value="liste"
                 checked={salleMode === "liste"}
-                disabled={pending}
                 onChange={() => setSalleMode("liste")}
                 className="text-indigo-600"
               />
@@ -128,6 +145,11 @@ export function CreerMatiereModal({ open, onClose, salleOptions }: Props) {
               freezeDuringSubmit={pending}
             />
           ) : null}
+
+          <MatiereContraintesEditor
+            defaultContraintes={[]}
+            freezeDuringSubmit={pending}
+          />
 
           {state && !state.ok ? (
             <p role="alert" className="text-sm text-red-700">

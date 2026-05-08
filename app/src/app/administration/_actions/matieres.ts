@@ -9,6 +9,7 @@ import {
   MATIERE_SALLE_MODE_VALUES,
   type MatiereSalleMode,
 } from "@/lib/models/Matiere";
+import { parseMatiereContraintesJsonForSave } from "@/lib/matiereContraintes";
 import { Salle } from "@/lib/models/Salle";
 import { PERMISSION_CREATION_MATIERE } from "@/lib/permissions/keys";
 import { slugifyMetierLabel } from "@/lib/slugifyMetier";
@@ -35,6 +36,14 @@ function parseSalleModeFromForm(formData: FormData): MatiereSalleMode | null {
   return MATIERE_SALLE_MODE_VALUES.includes(v as MatiereSalleMode)
     ? (v as MatiereSalleMode)
     : null;
+}
+
+function parseContraintesJsonField(formData: FormData): unknown {
+  const raw = formData.get("contraintesJson");
+  if (typeof raw !== "string") {
+    return undefined;
+  }
+  return raw;
 }
 
 function parseSalleIdsFromForm(formData: FormData): string[] {
@@ -157,6 +166,13 @@ export async function createMatiereAction(
 
   const slug = await allocateUniqueSlug(nom);
 
+  const contraintesParsed = parseMatiereContraintesJsonForSave(
+    parseContraintesJsonField(formData)
+  );
+  if (!contraintesParsed.ok) {
+    return { ok: false, error: contraintesParsed.error };
+  }
+
   await connectDB();
   try {
     await Matiere.create({
@@ -168,6 +184,7 @@ export async function createMatiereAction(
         salleIds.length > 0
           ? salleIds.map((id) => new mongoose.Types.ObjectId(id))
           : [],
+      contraintes: contraintesParsed.contraintes,
     });
   } catch (e: unknown) {
     if (isDuplicateKeyError(e)) {
@@ -213,6 +230,13 @@ export async function updateMatiereAction(
   }
   const { salleMode, salleIds } = salles;
 
+  const contraintesParsed = parseMatiereContraintesJsonForSave(
+    parseContraintesJsonField(formData)
+  );
+  if (!contraintesParsed.ok) {
+    return { ok: false, error: contraintesParsed.error };
+  }
+
   await connectDB();
   const doc = await Matiere.findById(idRaw);
   if (!doc) {
@@ -228,6 +252,7 @@ export async function updateMatiereAction(
     salleIds.length > 0
       ? salleIds.map((id) => new mongoose.Types.ObjectId(id))
       : [];
+  doc.contraintes = contraintesParsed.contraintes;
 
   try {
     await doc.save();
