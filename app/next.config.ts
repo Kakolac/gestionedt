@@ -10,7 +10,7 @@ const repoRoot = path.resolve(appDir, "..");
 
 /**
  * Next ne charge par défaut que les `.env*` dans `app/`, pas ceux à la racine du dépôt.
- * Alignement avec la convention AdAgile : `.env.local` à la racine puis `app/.env.local` (ce dernier gagne).
+ * Alignement avec la convention du projet (`gestionedt`) : `.env.local` à la racine puis `app/.env.local` (ce dernier gagne).
  */
 const repoEnv = path.join(repoRoot, ".env.local");
 const appEnv = path.join(appDir, ".env.local");

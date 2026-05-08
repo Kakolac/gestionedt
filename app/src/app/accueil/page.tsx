@@ -31,7 +31,7 @@ export default async function AccueilPage() {
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-sm font-medium uppercase tracking-[0.2em] text-indigo-600/80">
-            AdAgile
+            Gestion EDT
           </p>
           <h1 className="mt-2 bg-gradient-to-r from-indigo-700 via-fuchsia-600 to-sky-600 bg-clip-text text-3xl font-semibold tracking-tight text-transparent">
             Accueil

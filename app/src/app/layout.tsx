@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AdAgile — Connexion",
+  title: "Gestion EDT — Connexion",
   description: "Gestion de planning enseignant — authentification",
 };
 

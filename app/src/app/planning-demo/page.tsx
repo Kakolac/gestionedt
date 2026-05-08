@@ -126,7 +126,7 @@ const RAW_DATA_DEMO: PlanningExportRaw = {
 };
 
 export const metadata = {
-  title: "Démo PlanningBuilder | AdAgile",
+  title: "Démo PlanningBuilder | Gestion EDT",
   description:
     "Normalisation JSON export + placement glouton multi-formations (V1).",
 };

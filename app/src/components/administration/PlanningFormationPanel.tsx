@@ -77,7 +77,7 @@ export function PlanningFormationPanel({ options }: Props) {
         const parsed: unknown = JSON.parse(text);
         if (!isPlanningExportRawLoose(parsed)) {
           setError(
-            "JSON invalide : attendu un objet avec tableaux « formations » et « matieres » (export AdAgile)."
+            "JSON invalide : attendu un objet avec tableaux « formations » et « matieres » (structure d’export Gestion EDT)."
           );
           return;
         }
