@@ -101,6 +101,44 @@ export function splitHoursIntoSeancePaquets(
   return out;
 }
 
+/**
+ * Données pour une **semaine type** : chaque demande utilise un volume
+ * `arrondi(heures sur la ligne / nombreSemainesGrille)` puis paquets et séances régénérés.
+ * Avec copie du motif sur les `nombreSemainesGrille` semaines, le total planifié **approxime**
+ * le contrat annuel des lignes (écart dû à l’arrondi semaine par semaine).
+ */
+export function buildWeeklyTemplatePlanningData(
+  data: PlanningData,
+  nombreSemainesGrille: number,
+  maxBlocHeures: PlanningMaxSeanceHeuresDecoupage
+): PlanningData {
+  const nw = Math.max(1, Math.floor(Number(nombreSemainesGrille)) || 1);
+  const demands: PlanningDemand[] = data.demands.map((d) => {
+    const hWeek = Math.max(0, Math.round(d.nombreHeuresPrevues / nw));
+    const seances = splitHoursIntoSeancePaquets(hWeek, maxBlocHeures);
+    return { ...d, nombreHeuresPrevues: hWeek, seances };
+  });
+  const sessions: PlanningSession[] = [];
+  let sessionSeq = 0;
+  for (const d of demands) {
+    for (const paquet of d.seances) {
+      for (let q = 0; q < paquet.quantite; q += 1) {
+        sessions.push({
+          id: makeSessionId(d.id, sessionSeq),
+          demandId: d.id,
+          formationId: d.formationId,
+          matiereId: d.matiereId,
+          professeurId: d.professeurId,
+          duree: paquet.duree,
+          statut: "pending",
+        });
+        sessionSeq += 1;
+      }
+    }
+  }
+  return { ...data, demands, sessions };
+}
+
 /** Priorité : grille (`maxSeanceHeures`) puis `meta.maxSeanceHeures`, sinon blocs max 2 h. */
 export function resolveMaxSeanceHeuresDecoupage(
   raw: PlanningExportRaw,

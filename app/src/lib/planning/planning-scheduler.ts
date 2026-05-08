@@ -1,5 +1,8 @@
 import type { ProfesseurContrainteWire } from "@/lib/professeurContraintes.shared";
-import { canonPlanningId } from "@/lib/planning/planning-normalize";
+import {
+  buildWeeklyTemplatePlanningData,
+  canonPlanningId,
+} from "@/lib/planning/planning-normalize";
 import {
   nombreSemainesGrid,
   slotSemaine,
@@ -552,17 +555,9 @@ function formationLabelFairSort(data: PlanningData, formationId: string): string
   return (f?.nom ?? formationId).trim().toLowerCase();
 }
 
-/**
- * Intercale les séances formation par formation : la 1ʳᵉ la plus contrainte de A, puis la 1ʳᵉ de B, etc.,
- * avant d’enchaîner sur les 2ᵉ séances de chaque formation — évite qu’une seule cohorte monopolise
- * systématiquement les premiers choix du glouton sur les créneaux.
- */
-function sessionsOrderedFairAcrossFormations(
-  data: PlanningData,
-  sessions: readonly PlanningSession[],
-  demandById: Map<string, PlanningDemand>,
-  matiereById: Map<string, MatiereReference>
-): PlanningSession[] {
+function buildFormationBuckets(
+  sessions: readonly PlanningSession[]
+): Map<string, PlanningSession[]> {
   const buckets = new Map<string, PlanningSession[]>();
   for (const s of sessions) {
     let arr = buckets.get(s.formationId);
@@ -572,8 +567,14 @@ function sessionsOrderedFairAcrossFormations(
     }
     arr.push(s);
   }
+  return buckets;
+}
 
-  const formationIds = [...buckets.keys()].sort((a, b) => {
+function fairFormationIdsOrdered(
+  data: PlanningData,
+  buckets: Map<string, PlanningSession[]>
+): string[] {
+  return [...buckets.keys()].sort((a, b) => {
     const cmp = formationLabelFairSort(data, a).localeCompare(
       formationLabelFairSort(data, b),
       "fr",
@@ -582,16 +583,20 @@ function sessionsOrderedFairAcrossFormations(
     if (cmp !== 0) return cmp;
     return a.localeCompare(b);
   });
+}
 
+function sortBucketSessionsByScore(
+  buckets: Map<string, PlanningSession[]>,
+  demandById: Map<string, PlanningDemand>,
+  matiereById: Map<string, MatiereReference>
+): void {
   const scoreOf = (s: PlanningSession) =>
     scoreSessionContrainte(
       s,
       demandById.get(s.demandId),
       matiereById.get(s.matiereId)
     );
-
-  for (const fid of formationIds) {
-    const arr = buckets.get(fid)!;
+  for (const arr of buckets.values()) {
     arr.sort((a, b) => {
       const sb = scoreOf(b);
       const sa = scoreOf(a);
@@ -599,14 +604,19 @@ function sessionsOrderedFairAcrossFormations(
       return a.id.localeCompare(b.id);
     });
   }
+}
 
+function mergeRoundRobinFormationOrder(
+  buckets: Map<string, PlanningSession[]>,
+  formationIds: readonly string[]
+): PlanningSession[] {
   const merged: PlanningSession[] = [];
   let depth = 0;
   for (;;) {
     let any = false;
     for (const fid of formationIds) {
-      const arr = buckets.get(fid)!;
-      if (depth < arr.length) {
+      const arr = buckets.get(fid);
+      if (arr && depth < arr.length) {
         merged.push(arr[depth]!);
         any = true;
       }
@@ -617,52 +627,105 @@ function sessionsOrderedFairAcrossFormations(
   return merged;
 }
 
-const SLOTS_CACHE = new WeakMap<
-  PlanningGridConfig,
-  Partial<Record<PlanningSeanceDureeHeures, AssignedSlot[]>>
->();
+function simpleHash32(str: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i += 1) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
 
-function slotsFor(
-  grid: PlanningGridConfig,
-  duree: PlanningSeanceDureeHeures
-): AssignedSlot[] {
-  let rec = SLOTS_CACHE.get(grid);
-  if (!rec) {
-    rec = {};
-    SLOTS_CACHE.set(grid, rec);
-  }
-  let list = rec[duree];
-  if (!list) {
-    list = iterCandidateSlots(grid, duree);
-    rec[duree] = list;
-  }
-  return list;
+function formationIdsShuffledDeterministic(
+  ids: readonly string[],
+  salt: number
+): string[] {
+  return [...ids].sort((a, b) => {
+    const ha = simpleHash32(`${salt}:${a}`);
+    const hb = simpleHash32(`${salt}:${b}`);
+    if (ha !== hb) return ha - hb;
+    return a.localeCompare(b);
+  });
 }
 
 /**
- * Placement glouton global : ordre des séances **équitable entre formations** (alternance round-robin :
- * priorité à la séance la plus contrainte de chaque formation avant d’en prendre une 2ᵉ du même groupe),
- * puis parmi les positions valides, choix à coût souple minimal (voir `planning-soft-costs` : équilibre inter-semaines si horizon > 1),
- * avec départage lexicographique stable sur (semaine, jour, heure, salle).
+ * Ordres de traitement distincts pour le glouton : le premier ordre peut bloquer prématurément alors
+ * qu’un autre libère des combinaisons valides (pas de solveur global).
  */
-export function scheduleGreedy(
+function collectGreedySessionOrders(
   data: PlanningData,
-  grid: PlanningGridConfig = DEFAULT_PLANNING_GRID
-): PlanningData {
-  const demandById = new Map(
-    data.demands.map((d) => [d.id, d] as const)
-  );
-  const matiereById = new Map(
-    data.references.matieres.map((m) => [m.id, m] as const)
-  );
+  demandById: Map<string, PlanningDemand>,
+  matiereById: Map<string, MatiereReference>,
+  orderVariantSalt = 0
+): PlanningSession[][] {
+  const buckets = buildFormationBuckets(data.sessions);
+  const fairIds = fairFormationIdsOrdered(data, buckets);
+  sortBucketSessionsByScore(buckets, demandById, matiereById);
 
-  const sorted = sessionsOrderedFairAcrossFormations(
-    data,
-    data.sessions,
-    demandById,
-    matiereById
-  );
+  const scoreOf = (s: PlanningSession) =>
+    scoreSessionContrainte(
+      s,
+      demandById.get(s.demandId),
+      matiereById.get(s.matiereId)
+    );
 
+  const orders: PlanningSession[][] = [];
+  const seen = new Set<string>();
+
+  const pushOrder = (sessions: PlanningSession[]) => {
+    const key = sessions.map((s) => s.id).join("\0");
+    if (seen.has(key)) return;
+    seen.add(key);
+    orders.push(sessions);
+  };
+
+  pushOrder(mergeRoundRobinFormationOrder(buckets, fairIds));
+  pushOrder(mergeRoundRobinFormationOrder(buckets, [...fairIds].reverse()));
+
+  const nForm = fairIds.length;
+  if (nForm >= 2) {
+    for (let r = 1; r < nForm; r += 1) {
+      const rot = [...fairIds.slice(r), ...fairIds.slice(0, r)];
+      pushOrder(mergeRoundRobinFormationOrder(buckets, rot));
+    }
+  }
+
+  for (let s = 0; s < 6; s += 1) {
+    pushOrder(
+      mergeRoundRobinFormationOrder(
+        buckets,
+        formationIdsShuffledDeterministic(fairIds, s * 7919 + 13 + orderVariantSalt)
+      )
+    );
+  }
+
+  const globalDesc = [...data.sessions].sort((a, b) => {
+    const sb = scoreOf(b);
+    const sa = scoreOf(a);
+    if (sb !== sa) return sb - sa;
+    return a.id.localeCompare(b.id);
+  });
+  pushOrder(globalDesc);
+  pushOrder([...globalDesc].reverse());
+
+  return orders;
+}
+
+function countUnscheduledSessions(sessions: readonly PlanningSession[]): number {
+  let n = 0;
+  for (const s of sessions) {
+    if (s.statut === "unscheduled") n += 1;
+  }
+  return n;
+}
+
+function greedyPlaceOrdered(
+  data: PlanningData,
+  grid: PlanningGridConfig,
+  sorted: readonly PlanningSession[],
+  demandById: Map<string, PlanningDemand>,
+  matiereById: Map<string, MatiereReference>
+): PlanningSession[] {
   const placed: PlanningSession[] = [];
   const out: PlanningSession[] = [];
 
@@ -712,7 +775,7 @@ export function scheduleGreedy(
         if (a.cost !== b.cost) return a.cost - b.cost;
         return a.lex.localeCompare(b.lex);
       });
-      const best = feasible[0];
+      const best = feasible[0]!;
       chosen = sessionScheduled(session, best.slot, best.salle);
     }
 
@@ -730,13 +793,193 @@ export function scheduleGreedy(
   }
 
   const byId = new Map(out.map((s) => [s.id, s] as const));
-  const sessionsOrdered = data.sessions.map((s) => {
+  return data.sessions.map((s) => {
     const u = byId.get(s.id);
     return u ?? s;
   });
+}
+
+const SLOTS_CACHE = new WeakMap<
+  PlanningGridConfig,
+  Partial<Record<PlanningSeanceDureeHeures, AssignedSlot[]>>
+>();
+
+function slotsFor(
+  grid: PlanningGridConfig,
+  duree: PlanningSeanceDureeHeures
+): AssignedSlot[] {
+  let rec = SLOTS_CACHE.get(grid);
+  if (!rec) {
+    rec = {};
+    SLOTS_CACHE.set(grid, rec);
+  }
+  let list = rec[duree];
+  if (!list) {
+    list = iterCandidateSlots(grid, duree);
+    rec[duree] = list;
+  }
+  return list;
+}
+
+/**
+ * Placement glouton global : ordre des séances **équitable entre formations** (alternance round-robin :
+ * priorité à la séance la plus contrainte de chaque formation avant d’en prendre une 2ᵉ du même groupe),
+ * puis parmi les positions valides, choix à coût souple minimal (voir `planning-soft-costs` : équilibre inter-semaines si horizon > 1),
+ * avec départage lexicographique stable sur (semaine, jour, heure, salle).
+ *
+ * **Plusieurs ordres d’enchaînement** (rotation / mélange des formations, tri global par score…) sont essayés
+ * tant qu’il reste des séances `unscheduled` : on retient le résultat qui en minimise le nombre — le premier
+ * ordre seul peut bloquer alors qu’un autre trouve une solution (heuristique, pas garantie d’optimalité).
+ */
+export type ScheduleGreedyOptions = {
+  /** Décale les tirages d’ordre entre deux appels (ex. périodes trimestrielles avec motifs différents). */
+  orderVariantSalt?: number;
+};
+
+export function scheduleGreedy(
+  data: PlanningData,
+  grid: PlanningGridConfig = DEFAULT_PLANNING_GRID,
+  options?: ScheduleGreedyOptions
+): PlanningData {
+  const demandById = new Map(
+    data.demands.map((d) => [d.id, d] as const)
+  );
+  const matiereById = new Map(
+    data.references.matieres.map((m) => [m.id, m] as const)
+  );
+
+  const orders = collectGreedySessionOrders(
+    data,
+    demandById,
+    matiereById,
+    options?.orderVariantSalt ?? 0
+  );
+  let best = greedyPlaceOrdered(data, grid, orders[0]!, demandById, matiereById);
+  let bestU = countUnscheduledSessions(best);
+
+  if (bestU > 0) {
+    for (let i = 1; i < orders.length; i += 1) {
+      const cand = greedyPlaceOrdered(
+        data,
+        grid,
+        orders[i]!,
+        demandById,
+        matiereById
+      );
+      const u = countUnscheduledSessions(cand);
+      if (u < bestU) {
+        best = cand;
+        bestU = u;
+        if (bestU === 0) break;
+      }
+    }
+  }
 
   return {
     ...data,
-    sessions: sessionsOrdered,
+    sessions: best,
+  };
+}
+
+function splitNwIntoNearlyEqualParts(nw: number, parts: number): number[] {
+  const p = Math.max(1, Math.min(nw, Math.floor(parts) || 1));
+  if (p === 1) return [nw];
+  const base = Math.floor(nw / p);
+  const rem = nw % p;
+  const out: number[] = [];
+  for (let i = 0; i < p; i += 1) {
+    out.push(base + (i < rem ? 1 : 0));
+  }
+  return out;
+}
+
+/**
+ * Semaine type : le volume annuel des lignes est ramené à une **moyenne par semaine de gabarit**
+ * (`buildWeeklyTemplatePlanningData`), placé sur une semaine, puis copié sur chaque semaine
+ * S1…SN (ou sur des **blocs** successifs si `nombrePeriodes` &gt; 1).
+ *
+ * Les séances `demand` / heures affichées dans les objets `demands` du résultat restent celles
+ * du **`data` d’entrée** (contrat formation) ; seules les `sessions` reflètent le planning généré.
+ *
+ * Options :
+ * - **nombrePeriodes** `1` : un seul motif répété partout.
+ * - **3 / 4** : autant de **segments** consécutifs sur l’horizon (ex. trimestres) ; chaque segment
+ *   applique un nouveau placement hebdo (sel) pour la même charge hebdomadaire moyenne ; si un segment
+ *   produit **plus** de non planifiées que le premier passage de référence, on **réutilise** le placement
+ *   du premier segment pour ce bloc (pas de dégradation volontaire).
+ */
+export type ScheduleGreedyRepetitionOptions = {
+  nombrePeriodes?: number;
+};
+
+export function scheduleGreedyRepetitionMode(
+  data: PlanningData,
+  grid: PlanningGridConfig = DEFAULT_PLANNING_GRID,
+  options?: ScheduleGreedyRepetitionOptions
+): PlanningData {
+  const nw = nombreSemainesGrid(grid);
+  const P = Math.max(1, Math.min(12, Math.floor(options?.nombrePeriodes ?? 1) || 1));
+  const maxBloc: 2 | 4 = grid.maxSeanceHeures === 4 ? 4 : 2;
+
+  if (nw <= 1) {
+    return scheduleGreedy(data, grid);
+  }
+
+  const weeklyData = buildWeeklyTemplatePlanningData(data, nw, maxBloc);
+  const singleWeekGrid: PlanningGridConfig = {
+    ...grid,
+    nombreSemaines: 1,
+  };
+
+  const blockSizes = splitNwIntoNearlyEqualParts(nw, P);
+  const baseline = scheduleGreedy(weeklyData, singleWeekGrid, {
+    orderVariantSalt: 0,
+  });
+  const baselineU = countUnscheduledSessions(baseline.sessions);
+
+  let weekGlobal = 1;
+  const expanded: PlanningSession[] = [];
+
+  for (let p = 0; p < P; p += 1) {
+    const Wp = blockSizes[p]!;
+    let periodResult =
+      p === 0
+        ? baseline
+        : scheduleGreedy(weeklyData, singleWeekGrid, {
+            orderVariantSalt: p * 97_771,
+          });
+    if (
+      p > 0 &&
+      countUnscheduledSessions(periodResult.sessions) > baselineU
+    ) {
+      periodResult = baseline;
+    }
+
+    for (const s of periodResult.sessions) {
+      if (s.statut !== "scheduled" || s.assignedSlot == null) {
+        if (p === 0) {
+          expanded.push(s);
+        }
+        continue;
+      }
+      const baseSlot = s.assignedSlot;
+      for (let k = 0; k < Wp; k += 1) {
+        const sem = weekGlobal + k;
+        expanded.push({
+          ...s,
+          id: `${s.id}_P${p}_S${sem}`,
+          assignedSlot: {
+            ...baseSlot,
+            semaine: sem,
+          },
+        });
+      }
+    }
+    weekGlobal += Wp;
+  }
+
+  return {
+    ...data,
+    sessions: expanded,
   };
 }

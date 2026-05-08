@@ -15,6 +15,7 @@ import {
   type VerticalMergedBlock,
 } from "@/components/planning/planning-grid";
 import { PlanningManualSwapConstraintConfirmModal } from "@/components/planning/PlanningManualSwapConstraintConfirmModal";
+import { PlanningComparisonStats } from "@/components/planning/PlanningComparisonStats";
 import { PlanningProfessorColorPickPopover } from "@/components/planning/PlanningProfessorColorPickPopover";
 import { listMergedBlocksForGridView } from "@/lib/planning/planning-grid-view-blocks";
 import { normalizePlanningExport } from "@/lib/planning/planning-normalize";
@@ -31,6 +32,7 @@ import {
 import {
   DEFAULT_PLANNING_GRID,
   scheduleGreedy,
+  scheduleGreedyRepetitionMode,
 } from "@/lib/planning/planning-scheduler";
 import type {
   PlanningData,
@@ -79,12 +81,24 @@ export type PlanningBuilderProps = {
    * Prioritaire sur `gridConfig.nombreSemaines` lorsqu’elle est fournie.
    */
   nombreSemainesRepetition?: number;
+  /**
+   * Si `true` : semaine type (placement sur la première semaine de grille) puis copie
+   * identique sur toutes les semaines de l’horizon (voir `scheduleGreedyRepetitionMode`).
+   */
+  modeRepetition?: boolean;
+  /**
+   * En mode répétition : `1` = un motif pour tout le gabarit ; `3` ou `4` = blocs successifs
+   * (ex. trimestres) avec un nouveau placement par bloc lorsque cela ne dégrade pas le résultat.
+   */
+  repetitionNombrePeriodes?: 1 | 3 | 4;
 };
 
 /** Remonte `PlanningBuilderBody` pour réinitialiser sélection / retouches manuelles. */
 function planningBuilderResetKey(
   raw: PlanningExportRaw,
-  grid: PlanningGridConfig
+  grid: PlanningGridConfig,
+  modeRepetition: boolean,
+  repetitionNombrePeriodes: 1 | 3 | 4
 ): string {
   const meta = raw.meta;
   const fs = raw.formations;
@@ -106,6 +120,8 @@ function planningBuilderResetKey(
     grid.heureDebut,
     grid.heureFin,
     grid.joursSemaine.join(","),
+    modeRepetition ? "rep" : "std",
+    repetitionNombrePeriodes,
   ].join("|");
 }
 
@@ -154,11 +170,15 @@ function professorDisplayLabel(planning: PlanningData, professeurId: string): st
 type PlanningBuilderBodyProps = {
   rawData: PlanningExportRaw;
   gridEffectif: PlanningGridConfig;
+  modeRepetition: boolean;
+  repetitionNombrePeriodes: 1 | 3 | 4;
 };
 
 function PlanningBuilderBody({
   rawData,
   gridEffectif,
+  modeRepetition,
+  repetitionNombrePeriodes,
 }: PlanningBuilderBodyProps) {
   const horizonNs = nombreSemainesGrid(gridEffectif);
 
@@ -170,8 +190,13 @@ function PlanningBuilderBody({
 
   const basePlanningData = useMemo(() => {
     const normalized = normalizePlanningExport(rawData, gridEffectif);
+    if (modeRepetition) {
+      return scheduleGreedyRepetitionMode(normalized, gridEffectif, {
+        nombrePeriodes: repetitionNombrePeriodes,
+      });
+    }
     return scheduleGreedy(normalized, gridEffectif);
-  }, [rawData, gridEffectif]);
+  }, [rawData, gridEffectif, modeRepetition, repetitionNombrePeriodes]);
 
   const [manualSessions, setManualSessions] = useState<
     PlanningSession[] | null
@@ -447,6 +472,31 @@ function PlanningBuilderBody({
     }
   }, []);
 
+  const goToPreviousWeek = useCallback(() => {
+    setSemaineCourante((prev) => Math.max(1, prev - 1));
+  }, []);
+
+  const goToNextWeek = useCallback(() => {
+    setSemaineCourante((prev) => Math.min(horizonNs, prev + 1));
+  }, [horizonNs]);
+
+  useEffect(() => {
+    if (!isFullscreen || horizonNs <= 1) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        goToPreviousWeek();
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        goToNextWeek();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isFullscreen, horizonNs, goToPreviousWeek, goToNextWeek]);
+
   return (
     <div
       ref={planningRootRef}
@@ -480,6 +530,26 @@ function PlanningBuilderBody({
           ce contrôle, utilisez <code className="text-[0.85em]">liste</code> avec des{" "}
           <code className="text-[0.85em]">salleIds</code>.
         </p>
+        {modeRepetition ? (
+          <p className="mt-2 rounded-xl border border-emerald-200/85 bg-emerald-50/90 px-[2vw] py-[1.25vh] text-[clamp(0.82rem,1.2vw,0.95rem)] text-emerald-950">
+            <strong>Mode répétition :</strong> les heures annuelles des lignes sont raménées à une
+            moyenne <strong>par semaine de gabarit</strong> (arrondi), puis une <strong>semaine type</strong>{" "}
+            est placée et recopiée sur les <strong>{horizonNs}</strong> semaine
+            {horizonNs > 1 ? "s" : ""}, ce qui rapproche le total du contrat formation.{" "}
+            {repetitionNombrePeriodes === 1 ? (
+              <>
+                Un seul motif sur tout l&apos;horizon (même jour et mêmes heures chaque semaine).
+              </>
+            ) : (
+              <>
+                <strong>{repetitionNombrePeriodes} blocs</strong> successifs (ex. trimestres) : le
+                placement peut varier légerement entre blocs si le moteur le permet sans augmenter les
+                séances non planifiées.
+              </>
+            )}{" "}
+            Les échanges manuels peuvent ensuite différer d&apos;une semaine à l&apos;autre.
+          </p>
+        ) : null}
       </header>
       ) : null}
 
@@ -496,27 +566,55 @@ function PlanningBuilderBody({
           </h2>
           <div className="flex flex-wrap items-end gap-[2vw]">
             {horizonNs > 1 ? (
-              <label className="flex flex-wrap items-center gap-[1.5vw] text-[clamp(0.82rem,1.15vw,0.95rem)] text-slate-700">
-                <span className="font-medium text-slate-800">Afficher la semaine</span>
-                <select
-                  value={semaineAffichee}
-                  onChange={(e) =>
-                    setSemaineCourante(
-                      Math.min(
-                        horizonNs,
-                        Math.max(1, Number.parseInt(e.target.value, 10) || 1)
+              <div className="flex flex-col gap-[1vh]">
+                <label className="flex flex-wrap items-center gap-[1.5vw] text-[clamp(0.82rem,1.15vw,0.95rem)] text-slate-700">
+                  <span className="font-medium text-slate-800">
+                    Afficher la semaine
+                  </span>
+                  <select
+                    value={semaineAffichee}
+                    onChange={(e) =>
+                      setSemaineCourante(
+                        Math.min(
+                          horizonNs,
+                          Math.max(1, Number.parseInt(e.target.value, 10) || 1)
+                        )
                       )
-                    )
-                  }
-                  className="rounded-xl border border-slate-200 bg-white px-[2vw] py-[1vh] text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/30"
-                >
-                  {Array.from({ length: horizonNs }, (_, i) => i + 1).map((w) => (
-                    <option key={w} value={w}>
-                      Semaine {w} / {horizonNs}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                    }
+                    className="rounded-xl border border-slate-200 bg-white px-[2vw] py-[1vh] text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/30"
+                  >
+                    {Array.from({ length: horizonNs }, (_, i) => i + 1).map(
+                      (w) => (
+                        <option key={w} value={w}>
+                          Semaine {w} / {horizonNs}
+                        </option>
+                      )
+                    )}
+                  </select>
+                </label>
+                {isFullscreen ? (
+                  <div className="flex items-center justify-center gap-[2vw]">
+                    <button
+                      type="button"
+                      onClick={goToPreviousWeek}
+                      disabled={semaineAffichee <= 1}
+                      className="rounded-lg border border-slate-300 bg-white px-[1.5vw] py-[0.8vh] text-slate-700 outline-none hover:bg-slate-50 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label="Semaine précédente"
+                    >
+                      ←
+                    </button>
+                    <button
+                      type="button"
+                      onClick={goToNextWeek}
+                      disabled={semaineAffichee >= horizonNs}
+                      className="rounded-lg border border-slate-300 bg-white px-[1.5vw] py-[0.8vh] text-slate-700 outline-none hover:bg-slate-50 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label="Semaine suivante"
+                    >
+                      →
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             ) : null}
             {planningData.references.formations.length > 1 ? (
               <label className="flex flex-wrap items-center gap-[1.5vw] text-[clamp(0.82rem,1.15vw,0.95rem)] text-slate-700">
@@ -571,6 +669,20 @@ function PlanningBuilderBody({
           <p className="shrink-0 text-[clamp(0.76rem,1.05vw,0.85rem)] text-slate-500">
             Plein écran : clic droit sur un cours pour échanger des créneaux (comme hors
             plein écran).
+            {horizonNs > 1 ? (
+              <>
+                {" "}
+                Plusieurs semaines : touches{" "}
+                <strong className="font-medium text-slate-600">
+                  Flèche gauche
+                </strong>{" "}
+                /{" "}
+                <strong className="font-medium text-slate-600">
+                  Flèche droite
+                </strong>{" "}
+                ou les boutons sous la liste déroulante pour changer de semaine affichée.
+              </>
+            ) : null}
           </p>
         )}
         {selectionRecap != null ? (
@@ -737,6 +849,10 @@ function PlanningBuilderBody({
         </details>
       </section>
       ) : null}
+
+      {!isFullscreen ? (
+        <PlanningComparisonStats planningData={planningData} />
+      ) : null}
     </div>
   );
 }
@@ -748,6 +864,8 @@ export function PlanningBuilder({
   rawData,
   gridConfig = DEFAULT_PLANNING_GRID,
   nombreSemainesRepetition,
+  modeRepetition = false,
+  repetitionNombrePeriodes = 1,
 }: PlanningBuilderProps) {
   const gridEffectif = useMemo(() => {
     const base = { ...DEFAULT_PLANNING_GRID, ...gridConfig };
@@ -761,9 +879,15 @@ export function PlanningBuilder({
     return base;
   }, [gridConfig, nombreSemainesRepetition]);
 
+  const periodes =
+    repetitionNombrePeriodes === 3 || repetitionNombrePeriodes === 4
+      ? repetitionNombrePeriodes
+      : (1 as const);
+
   const resetKey = useMemo(
-    () => planningBuilderResetKey(rawData, gridEffectif),
-    [rawData, gridEffectif]
+    () =>
+      planningBuilderResetKey(rawData, gridEffectif, modeRepetition, periodes),
+    [rawData, gridEffectif, modeRepetition, periodes]
   );
 
   return (
@@ -771,6 +895,8 @@ export function PlanningBuilder({
       key={resetKey}
       rawData={rawData}
       gridEffectif={gridEffectif}
+      modeRepetition={modeRepetition}
+      repetitionNombrePeriodes={periodes}
     />
   );
 }

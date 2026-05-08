@@ -29,6 +29,10 @@ export function PlanningFormationPanel({ options }: Props) {
   const [nombreSemainesRepetition, setNombreSemainesRepetition] = useState(36);
   const [maxSeanceDecoupage, setMaxSeanceDecoupage] = useState<2 | 4>(2);
   const [rawData, setRawData] = useState<PlanningExportRaw | null>(null);
+  const [modeRepetition, setModeRepetition] = useState(false);
+  const [repetitionNombrePeriodes, setRepetitionNombrePeriodes] = useState<
+    1 | 3 | 4
+  >(1);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -43,7 +47,7 @@ export function PlanningFormationPanel({ options }: Props) {
     });
   }
 
-  function loadPlanning() {
+  function loadFromDatabase(useRepetitionMode: boolean) {
     setError(null);
     const ids = selectedIds.map((x) => x.trim()).filter(Boolean);
     if (ids.length === 0) {
@@ -58,6 +62,7 @@ export function PlanningFormationPanel({ options }: Props) {
         return;
       }
       setRawData(res.rawData);
+      setModeRepetition(useRepetitionMode);
     });
   }
 
@@ -77,6 +82,8 @@ export function PlanningFormationPanel({ options }: Props) {
           return;
         }
         setRawData(parsed);
+        setModeRepetition(false);
+        setRepetitionNombrePeriodes(1);
       } catch {
         setError("Impossible de lire le fichier (JSON invalide).");
       }
@@ -158,14 +165,52 @@ export function PlanningFormationPanel({ options }: Props) {
           </select>
         </label>
 
-        <button
-          type="button"
-          disabled={isPending || selectedIds.length === 0}
-          onClick={loadPlanning}
-          className="inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-indigo-600 to-fuchsia-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:from-indigo-500 hover:to-fuchsia-500 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {isPending ? "Chargement…" : "Charger depuis la base"}
-        </button>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="font-medium text-slate-800">
+            Répétition : périodes sur le gabarit
+          </span>
+          <span className="text-xs text-slate-500">
+            S&apos;applique à <strong>Créer un planning répété</strong> : 1 = même motif chaque semaine ;
+            3 ou 4 = blocs successifs (ex. trimestres) avec un placement recalculé par bloc quand cela ne
+            crée pas plus de séances non planifiées. Le volume horaire des lignes est réparti en
+            moyenne par semaine sur le nombre de semaines du gabarit ci‑dessus.
+          </span>
+          <select
+            value={repetitionNombrePeriodes}
+            disabled={isPending}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              setRepetitionNombrePeriodes(
+                v === 3 ? 3 : v === 4 ? 4 : 1
+              );
+            }}
+            className="max-w-[min(42vw,16rem)] rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/30"
+          >
+            <option value={1}>1 — même motif sur tout le gabarit</option>
+            <option value={3}>3 — trois blocs (ex. trimestres)</option>
+            <option value={4}>4 — quatre blocs (ex. trimestres)</option>
+          </select>
+        </label>
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-stretch">
+          <button
+            type="button"
+            disabled={isPending || selectedIds.length === 0}
+            onClick={() => loadFromDatabase(false)}
+            className="inline-flex flex-1 items-center justify-center rounded-xl bg-gradient-to-r from-indigo-600 to-fuchsia-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:from-indigo-500 hover:to-fuchsia-500 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isPending ? "Chargement…" : "Charger depuis la base"}
+          </button>
+          <button
+            type="button"
+            disabled={isPending || selectedIds.length === 0}
+            onClick={() => loadFromDatabase(true)}
+            className="inline-flex flex-1 items-center justify-center rounded-xl border border-emerald-200/90 bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:from-emerald-500 hover:to-teal-500 disabled:cursor-not-allowed disabled:opacity-50"
+            title="Une semaine type est calculée puis copiée sur toutes les semaines du gabarit (même emploi du temps chaque semaine)."
+          >
+            {isPending ? "Chargement…" : "Créer un planning répété"}
+          </button>
+        </div>
 
         <div className="border-t border-slate-200 pt-4">
           <p className="text-xs font-medium text-slate-700">
@@ -198,6 +243,8 @@ export function PlanningFormationPanel({ options }: Props) {
             rawData={rawData}
             nombreSemainesRepetition={semaines}
             gridConfig={{ maxSeanceHeures: maxSeanceDecoupage }}
+            modeRepetition={modeRepetition}
+            repetitionNombrePeriodes={repetitionNombrePeriodes}
           />
         </div>
       ) : null}
