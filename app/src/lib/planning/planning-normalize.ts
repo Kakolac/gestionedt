@@ -10,6 +10,8 @@ import {
   MAX_HEURES_PLAFOND_SEMAINE,
   type ProfesseurContrainteWire,
 } from "@/lib/professeurContraintes.shared";
+import { formationContraintesWirePourPlanning } from "@/lib/formationContraintes";
+import { extractDateDemarrageIsoDepuisValeurExport } from "@/lib/planning/planning-public-holidays";
 import {
   PLANNING_DATA_VERSION,
   type FormationLigneNormalisee,
@@ -195,7 +197,7 @@ function parseFormationLigne(ligne: unknown): FormationLigneNormalisee | null {
 function parseFormation(raw: unknown): FormationReference | null {
   if (typeof raw !== "object" || raw === null) return null;
   const o = raw as Record<string, unknown>;
-  const id = asString(o._id);
+  const id = asString(o._id) ?? asString(o.id);
   const nom = asString(o.nom) ?? "(sans nom)";
   if (!id) return null;
   const lignesIn = o.lignes;
@@ -207,7 +209,26 @@ function parseFormation(raw: unknown): FormationReference | null {
     }
   }
   if (lignes.length === 0) return null;
-  return { id: canonPlanningId(id), nom, lignes };
+  const contraintes = formationContraintesWirePourPlanning(o.contraintes);
+  const paysRaw = asString(o.localisationPays);
+  const localisationPays =
+    paysRaw && paysRaw.trim().length >= 2
+      ? paysRaw.trim().toUpperCase()
+      : undefined;
+  const regRaw = asString(o.localisationRegion);
+  const localisationRegion =
+    regRaw && regRaw.trim().length > 0 ? regRaw.trim() : undefined;
+  const ddExtracted = extractDateDemarrageIsoDepuisValeurExport(o.dateDemarrageIso);
+  const dateDemarrageIso = ddExtracted ?? undefined;
+  return {
+    id: canonPlanningId(id),
+    nom,
+    lignes,
+    contraintes,
+    ...(localisationPays ? { localisationPays } : {}),
+    ...(localisationRegion ? { localisationRegion } : {}),
+    ...(dateDemarrageIso ? { dateDemarrageIso } : {}),
+  };
 }
 
 /** Priorité contrainte matière : tolère nombre décimal issu JSON/BDD (`Math.trunc`). */
@@ -550,6 +571,22 @@ export function normalizePlanningExport(
           salleIds: [...matiere.salleIds],
           contraintesProfesseur: prof.contraintes.map((c) => ({ ...c })),
           contraintesMatiere: matiere.contraintes.map((c) => ({ ...c })),
+          contraintesFormation: form.contraintes.map((c) =>
+            c.kind === "jours_formation"
+              ? { kind: c.kind, joursSemaine: [...c.joursSemaine] }
+              : { ...c }
+          ),
+          ...(form.localisationPays
+            ? {
+                localisationPays: form.localisationPays,
+                ...(form.localisationRegion
+                  ? { localisationRegion: form.localisationRegion }
+                  : {}),
+              }
+            : {}),
+          ...(form.dateDemarrageIso
+            ? { dateDemarrageIso: form.dateDemarrageIso }
+            : {}),
         });
 
         for (const paquet of seances) {

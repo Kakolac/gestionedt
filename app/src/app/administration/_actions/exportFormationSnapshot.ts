@@ -9,6 +9,7 @@ import { Matiere } from "@/lib/models/Matiere";
 import { Professeur } from "@/lib/models/Professeur";
 import { PERMISSION_CREATION_FORMATION } from "@/lib/permissions/keys";
 import type { PlanningExportRaw } from "@/lib/planning/planning.types";
+import { extractDateDemarrageIsoDepuisValeurExport } from "@/lib/planning/planning-public-holidays";
 import { mongoLeanToPlainJson } from "@/lib/serialization/mongoLeanToJson";
 
 const MAX_FORMATIONS_PER_EXPORT = 80;
@@ -157,6 +158,17 @@ async function buildFormationSnapshotPlain(
   };
 
   const plain = mongoLeanToPlainJson(payload) as Record<string, unknown>;
+  const fsPlain = plain.formations;
+  if (Array.isArray(fsPlain)) {
+    for (const item of fsPlain) {
+      if (typeof item !== "object" || item === null) continue;
+      const rec = item as Record<string, unknown>;
+      const ext = extractDateDemarrageIsoDepuisValeurExport(rec.dateDemarrageIso);
+      if (ext) {
+        rec.dateDemarrageIso = ext;
+      }
+    }
+  }
   return { ok: true, plain };
 }
 

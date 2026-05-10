@@ -7,6 +7,10 @@ import { Formation } from "@/lib/models/Formation";
 import { Matiere } from "@/lib/models/Matiere";
 import { Professeur } from "@/lib/models/Professeur";
 import { PERMISSION_CREATION_FORMATION } from "@/lib/permissions/keys";
+import {
+  leanWireFromFormationContraintesDoc,
+  mergeFormationDefaultsWire,
+} from "@/lib/formationContraintes";
 import { GestionFormationPanel } from "@/components/administration/GestionFormationPanel";
 import type {
   FormationLigneListe,
@@ -258,6 +262,19 @@ export default async function CreationFormationPage() {
         .filter((x): x is string => typeof x === "string" && x.trim().length > 0)
         .join(", ");
 
+      const rawCtr = (f as { contraintes?: unknown }).contraintes;
+
+      const lpRaw = (f as { localisationPays?: unknown }).localisationPays;
+      const lrRaw = (f as { localisationRegion?: unknown }).localisationRegion;
+      const localisationPays =
+        typeof lpRaw === "string" ? lpRaw.trim().toUpperCase() : "";
+      const localisationRegion =
+        typeof lrRaw === "string" ? lrRaw.trim() : "";
+
+      const ddRaw = (f as { dateDemarrageIso?: unknown }).dateDemarrageIso;
+      const dateDemarrageIso =
+        typeof ddRaw === "string" ? ddRaw.trim().slice(0, 10) : "";
+
       return {
         id: String((fRaw as { _id: unknown })._id ?? ""),
         nom,
@@ -268,6 +285,12 @@ export default async function CreationFormationPage() {
         professeurIds: pidsUnion,
         professeursLabel,
         nombreHeures,
+        contraintes: mergeFormationDefaultsWire(
+          leanWireFromFormationContraintesDoc(rawCtr)
+        ),
+        localisationPays,
+        localisationRegion,
+        dateDemarrageIso,
       };
     });
 
@@ -285,7 +308,9 @@ export default async function CreationFormationPage() {
           une <strong>matière à la fois</strong> (existante ou nouvelle comme avant)&nbsp;: pour
           chacune vous indiquez les <strong>heures prévues</strong>, le ou les{" "}
           <strong>professeurs</strong> dans une modale, puis enchaînez sur d&apos;autres matières.
-          Le champ <strong>total</strong> du bloc est la somme des heures par matière. La même
+          Définissez aussi les <strong>contraintes de planning de la formation</strong> (pause
+          midi, plage horaire, jours)&nbsp;: elles sont obligatoires à l&apos;enregistrement et
+          appliquées strictement par le moteur de placement. Le champ <strong>total</strong> du bloc est la somme des heures par matière. La même
           matière du référentiel peut être utilisée dans <strong>plusieurs</strong> formations ;
           dans une formation donnée, elle ne peut figurer qu&apos;<strong>une fois</strong> par
           bloc. Création d&apos;une matière également via{" "}

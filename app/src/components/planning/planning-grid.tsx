@@ -16,6 +16,10 @@ import {
   resolveProfessorAccent,
   type PlanningProfessorColorOverride,
 } from "@/lib/planning/planning-professor-accent";
+import {
+  dateCivilPourJourSemaine,
+  formatDateEntetePlanningFrUtc,
+} from "@/lib/planning/planning-public-holidays";
 
 export type { VerticalMergedBlock } from "@/lib/planning/planning-merged-blocks";
 export { buildVerticalMergedBlocks } from "@/lib/planning/planning-merged-blocks";
@@ -410,6 +414,16 @@ export function PlanningGrid({
     return m;
   }, [sessionsPourSemaine, grid.joursSemaine, planningData]);
 
+  /** Dates civiles par colonne lorsque `grid.semaine1LundiIso` est un lundi valide. */
+  const dateEnteteParJourIso = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const jour of grid.joursSemaine) {
+      const d = dateCivilPourJourSemaine(grid, semaineVue, jour);
+      if (d) m.set(jour, formatDateEntetePlanningFrUtc(d));
+    }
+    return m;
+  }, [grid, grid.joursSemaine, semaineVue]);
+
   const colCount = grid.joursSemaine.length;
   const rowCount = heures.length;
   const gridTemplateRows = `auto repeat(${rowCount}, minmax(6rem, auto))`;
@@ -438,14 +452,22 @@ export function PlanningGrid({
         <div className="sticky left-0 z-20 flex items-center justify-center bg-gradient-to-br from-indigo-100/95 via-indigo-50/90 to-sky-100/70 px-2 py-3 text-center text-[clamp(0.7rem,1vw,0.8rem)] font-bold uppercase tracking-[0.12em] text-indigo-800/90">
           Heure
         </div>
-        {grid.joursSemaine.map((j) => (
-          <div
-            key={j}
-            className="flex items-center justify-center bg-gradient-to-br from-indigo-50/95 via-white to-sky-50/80 px-2 py-3 text-center text-[clamp(0.8rem,1.15vw,0.95rem)] font-bold text-indigo-950"
-          >
-            {JOUR_LABEL[j] ?? `Jour ${j}`}
-          </div>
-        ))}
+        {grid.joursSemaine.map((j) => {
+          const dateEntete = dateEnteteParJourIso.get(j);
+          return (
+            <div
+              key={j}
+              className="flex flex-col items-center justify-center gap-[0.35vh] bg-gradient-to-br from-indigo-50/95 via-white to-sky-50/80 px-2 py-3 text-center text-[clamp(0.8rem,1.15vw,0.95rem)] font-bold text-indigo-950"
+            >
+              <span>{JOUR_LABEL[j] ?? `Jour ${j}`}</span>
+              {dateEntete ? (
+                <span className="block max-w-full truncate text-[clamp(0.62rem,0.95vw,0.78rem)] font-medium normal-case tracking-normal text-slate-600">
+                  {dateEntete}
+                </span>
+              ) : null}
+            </div>
+          );
+        })}
 
         {heures.map((h, i) => (
           <Fragment key={h}>

@@ -27,6 +27,7 @@ const RAW_DATA_DEMO: PlanningExportRaw = {
       nom: "BTS SIO — groupe A",
       description: "",
       nombreHeures: 13,
+      dateDemarrageIso: "2025-09-01",
       lignes: [
         {
           matiereId: IDS.mMath,
@@ -45,6 +46,7 @@ const RAW_DATA_DEMO: PlanningExportRaw = {
       nom: "BTS SIO — groupe B",
       description: "",
       nombreHeures: 6,
+      dateDemarrageIso: "2025-09-01",
       lignes: [
         {
           matiereId: IDS.mAng,

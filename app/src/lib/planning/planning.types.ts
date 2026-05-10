@@ -1,3 +1,4 @@
+import type { FormationContrainteWire } from "@/lib/formationContraintes.shared";
 import type { MatiereContrainteWire } from "@/lib/matiereContraintes.shared";
 import type { ProfesseurContrainteWire } from "@/lib/professeurContraintes.shared";
 
@@ -44,6 +45,11 @@ export type PlanningGridConfig = {
   heureDebut: number;
   heureFin: number;
   pasHeures: 1;
+  /**
+   * ISO date `YYYY-MM-DD` du **lundi** de la première semaine de grille (`semaine === 1`).
+   * Déduit des **`dateDemarrageIso`** des formations du snapshot (plus tôt lundi de semaine civile) ou saisi manuellement ; requis pour placer dès qu’il y a des formations dans le jeu.
+   */
+  semaine1LundiIso?: string;
 };
 
 /** Ligne « formation » telle que lue dans le JSON (après narrow). */
@@ -57,6 +63,17 @@ export type FormationReference = {
   id: string;
   nom: string;
   lignes: FormationLigneNormalisee[];
+  /**
+   * Export incomplet → `[]` : pas de filtre formation au planner (rétrocompatibilité).
+   * Si les quatre natures sont présentes, contraintes toujours strictes (`sessionPlacementBlocker`).
+   */
+  contraintes: FormationContrainteWire[];
+  /** Pays ISO pour jours fériés (`date-holidays`) ; vide = pas de contrainte férié. */
+  localisationPays?: string;
+  /** Subdivision (ex. état / communauté) au sens `date-holidays`, optionnelle. */
+  localisationRegion?: string;
+  /** Date de démarrage civile `YYYY-MM-DD` (planning : lundi S1 = lundi de la même semaine lun–dim). */
+  dateDemarrageIso?: string;
 };
 
 export type MatiereReference = {
@@ -108,6 +125,12 @@ export type PlanningDemand = {
   salleIds: string[];
   contraintesProfesseur: ProfesseurContrainteWire[];
   contraintesMatiere: MatiereContrainteWire[];
+  /** Copie des contraintes formation ; vide si export sans bloc complet — sinon placement strict. */
+  contraintesFormation: FormationContrainteWire[];
+  localisationPays?: string;
+  localisationRegion?: string;
+  /** Date de démarrage civile `YYYY-MM-DD` — aucun cours placé avant ce jour (scheduler). */
+  dateDemarrageIso?: string;
 };
 
 /** Créneau assigné : semaine 1-based × jour ISO × intervalle d’heures entières [heureDebut, heureFin) (fin exclusive). */

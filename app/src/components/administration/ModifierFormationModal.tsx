@@ -11,7 +11,11 @@ import {
   type AjouterLigneFormationResult,
 } from "@/components/administration/AjouterLigneFormationModal";
 import type { MatiereOptionCourte } from "@/components/administration/CreerFormationModal";
+import { FormationContraintesEditor } from "@/components/administration/FormationContraintesEditor";
+import { FormationLocalisationEditor } from "@/components/administration/FormationLocalisationEditor";
+import { isoDateCalendrierLocal } from "@/lib/planning/planning-public-holidays";
 import type { ProfesseurOption } from "@/components/administration/FormationProfesseursChecklist";
+import type { FormationContrainteWire } from "@/lib/formationContraintes.shared";
 
 export type FormationLigneListe = {
   matiereId: string;
@@ -31,6 +35,11 @@ export type FormationRow = {
   professeurIds: string[];
   professeursLabel: string;
   nombreHeures: number;
+  contraintes: FormationContrainteWire[];
+  localisationPays: string;
+  localisationRegion: string;
+  /** `YYYY-MM-DD` ou vide pour les anciennes fiches. */
+  dateDemarrageIso: string;
 };
 
 type DraftLigne =
@@ -220,6 +229,38 @@ export function ModifierFormationModal({
                 className="resize-y rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/30 disabled:opacity-60"
               />
             </label>
+
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="font-medium text-slate-800">
+                Date de démarrage <span className="font-normal text-slate-500">(obligatoire)</span>
+              </span>
+              <input
+                name="dateDemarrageIso"
+                type="date"
+                required
+                disabled={pending}
+                defaultValue={
+                  row.dateDemarrageIso.trim().slice(0, 10) ||
+                  isoDateCalendrierLocal(new Date())
+                }
+                className="rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/30 disabled:opacity-60"
+              />
+              <span className="text-xs text-slate-500">
+                Calendrier planning : le lundi de la semaine S1 est déduit de cette date si vous ne forcez pas
+                un autre lundi dans le builder.
+              </span>
+            </label>
+
+            <FormationContraintesEditor
+              defaultContraintes={row.contraintes}
+              freezeDuringSubmit={pending}
+            />
+
+            <FormationLocalisationEditor
+              defaultPays={row.localisationPays}
+              defaultRegion={row.localisationRegion}
+              freezeDuringSubmit={pending}
+            />
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-[min(4vw,0.875rem)]">
               <div className="flex flex-wrap items-center justify-between gap-2">

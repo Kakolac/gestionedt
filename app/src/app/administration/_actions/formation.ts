@@ -8,6 +8,11 @@ import { Formation } from "@/lib/models/Formation";
 import { Matiere } from "@/lib/models/Matiere";
 import { Professeur } from "@/lib/models/Professeur";
 import { PERMISSION_CREATION_FORMATION } from "@/lib/permissions/keys";
+import { parseFormationContraintesJsonForSave } from "@/lib/formationContraintes";
+import {
+  isLocalisationPaysSupporteeAdmin,
+  parseIsoDateOnlyUtc,
+} from "@/lib/planning/planning-public-holidays";
 import { slugifyMetierLabel } from "@/lib/slugifyMetier";
 import { revalidatePath } from "next/cache";
 
@@ -174,6 +179,74 @@ function parseFormationNomDesc(formData: FormData):
   const description =
     typeof descRaw === "string" ? descRaw.trim().slice(0, DESC_FORMATION_MAX) : "";
   return { ok: true, nom, description };
+}
+
+const REGION_LOCALISATION_MAX = 32;
+const REGION_LOCALISATION_CHARS = /^[A-Za-z0-9-]*$/;
+
+function parseFormationLocalisationFromForm(formData: FormData):
+  | FormationActionState
+  | { ok: true; localisationPays: string; localisationRegion: string } {
+  const paysRaw = formData.get("localisationPays");
+  const regionRaw = formData.get("localisationRegion");
+  const pays =
+    typeof paysRaw === "string" ? paysRaw.trim().toUpperCase() : "";
+  const region =
+    typeof regionRaw === "string" ? regionRaw.trim() : "";
+
+  if (region.length > REGION_LOCALISATION_MAX) {
+    return {
+      ok: false,
+      error: `Localisation : subdivision trop longue (${REGION_LOCALISATION_MAX} caractères max).`,
+    };
+  }
+  if (region.length > 0 && !REGION_LOCALISATION_CHARS.test(region)) {
+    return {
+      ok: false,
+      error:
+        "Localisation : subdivision — uniquement lettres sans accent, chiffres et tirets.",
+    };
+  }
+
+  if (!pays) {
+    if (region.length > 0) {
+      return {
+        ok: false,
+        error:
+          "Choisissez un pays pour la localisation ou effacez la subdivision.",
+      };
+    }
+    return { ok: true, localisationPays: "", localisationRegion: "" };
+  }
+
+  if (!isLocalisationPaysSupporteeAdmin(pays)) {
+    return {
+      ok: false,
+      error: "Pays de localisation inconnu ou non disponible dans la liste.",
+    };
+  }
+
+  return { ok: true, localisationPays: pays, localisationRegion: region };
+}
+
+function parseFormationDateDemarrageFromForm(formData: FormData):
+  | FormationActionState
+  | { ok: true; dateDemarrageIso: string } {
+  const raw = formData.get("dateDemarrageIso");
+  if (typeof raw !== "string" || !raw.trim()) {
+    return {
+      ok: false,
+      error: "Indiquez la date de démarrage de la formation.",
+    };
+  }
+  const iso = raw.trim().slice(0, 10);
+  if (!parseIsoDateOnlyUtc(iso)) {
+    return {
+      ok: false,
+      error: "Date de démarrage invalide (format AAAA-MM-JJ).",
+    };
+  }
+  return { ok: true, dateDemarrageIso: iso };
 }
 
 type LigneParsée =
@@ -380,6 +453,17 @@ export async function createFormationAction(
   if (!meta.ok) return meta;
   const { nom, description } = meta;
 
+  const ctrParsed = parseFormationContraintesJsonForSave(
+    formData.get("formationContraintesJson")
+  );
+  if (!ctrParsed.ok) return { ok: false, error: ctrParsed.error };
+
+  const locParsed = parseFormationLocalisationFromForm(formData);
+  if (!("localisationPays" in locParsed)) return locParsed;
+
+  const dateParsed = parseFormationDateDemarrageFromForm(formData);
+  if (!("dateDemarrageIso" in dateParsed)) return dateParsed;
+
   const parsedLignes = parseLignesJsonFromForm(formData);
   if (!parsedLignes.ok) return parsedLignes;
 
@@ -407,6 +491,10 @@ export async function createFormationAction(
       description,
       lignes: mongooseLignes,
       nombreHeures: totalHeures,
+      contraintes: ctrParsed.contraintes,
+      localisationPays: locParsed.localisationPays,
+      localisationRegion: locParsed.localisationRegion,
+      dateDemarrageIso: dateParsed.dateDemarrageIso,
     });
   } catch (e: unknown) {
     if (isDuplicateKeyError(e)) {
@@ -429,6 +517,17 @@ export async function updateFormationAction(
   const meta = parseFormationNomDesc(formData);
   if (!meta.ok) return meta;
   const { nom, description } = meta;
+
+  const ctrParsed = parseFormationContraintesJsonForSave(
+    formData.get("formationContraintesJson")
+  );
+  if (!ctrParsed.ok) return { ok: false, error: ctrParsed.error };
+
+  const locParsed = parseFormationLocalisationFromForm(formData);
+  if (!("localisationPays" in locParsed)) return locParsed;
+
+  const dateParsed = parseFormationDateDemarrageFromForm(formData);
+  if (!("dateDemarrageIso" in dateParsed)) return dateParsed;
 
   const idRaw = formData.get("formationId");
   if (
@@ -466,6 +565,10 @@ export async function updateFormationAction(
   doc.description = description;
   doc.lignes = mongooseLignes;
   doc.nombreHeures = totalHeures;
+  doc.contraintes = ctrParsed.contraintes;
+  doc.localisationPays = locParsed.localisationPays;
+  doc.localisationRegion = locParsed.localisationRegion;
+  doc.dateDemarrageIso = dateParsed.dateDemarrageIso;
 
   try {
     await doc.save();

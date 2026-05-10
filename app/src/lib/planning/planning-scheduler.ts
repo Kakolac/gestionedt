@@ -2,6 +2,18 @@ import {
   matiereContrainteEstStricte,
   slotMatchesPlageHoraire,
 } from "@/lib/matiereContraintes.shared";
+import {
+  formationPauseChevaucheCreneau,
+  type FormationContrainteWire,
+} from "@/lib/formationContraintes.shared";
+import {
+  dateCivilPourSlot,
+  estJourFeriePourLocalisation,
+  holidaysCalculatorAvailable,
+  isoDateCivilPourSlot,
+  parseIsoDateOnlyUtc,
+  parseSemaine1LundiIso,
+} from "@/lib/planning/planning-public-holidays";
 import type { ProfesseurContrainteWire } from "@/lib/professeurContraintes.shared";
 import {
   buildWeeklyTemplatePlanningData,
@@ -21,6 +33,7 @@ import type {
   PlanningData,
   PlanningDemand,
   PlanningGridConfig,
+  PlanningMaxSeanceHeuresDecoupage,
   PlanningSeanceDureeHeures,
   PlanningSession,
 } from "@/lib/planning/planning.types";
@@ -52,6 +65,24 @@ export function iterCandidateSlots(
       for (let h = config.heureDebut; h <= lastStart; h += 1) {
         out.push({ semaine, jour, heureDebut: h, heureFin: h + duree });
       }
+    }
+  }
+  return out;
+}
+
+/** Même ordre que `iterCandidateSlots`, mais uniquement pour une semaine logique donnée (gabarit répété). */
+export function iterCandidateSlotsPourSemaineFixe(
+  config: PlanningGridConfig,
+  duree: PlanningSeanceDureeHeures,
+  semaine: number
+): AssignedSlot[] {
+  const out: AssignedSlot[] = [];
+  const lastStart = config.heureFin - duree;
+  const ss = Math.floor(semaine);
+  if (!Number.isFinite(ss) || ss < 1) return out;
+  for (const jour of config.joursSemaine) {
+    for (let h = config.heureDebut; h <= lastStart; h += 1) {
+      out.push({ semaine: ss, jour, heureDebut: h, heureFin: h + duree });
     }
   }
   return out;
@@ -369,21 +400,114 @@ function sessionScheduled(
   return out;
 }
 
+function formationPlacementBlocker(
+  slot: AssignedSlot,
+  contraintes: FormationContrainteWire[]
+): string | null {
+  if (contraintes.length === 0) return null;
+  for (const c of contraintes) {
+    switch (c.kind) {
+      case "jours_formation":
+        if (!new Set(c.joursSemaine).has(slot.jour)) {
+          return "Jour hors des jours autorisés pour cette formation.";
+        }
+        break;
+      case "heure_demarrage":
+        if (slot.heureDebut < c.heureMin) {
+          return `La formation impose un premier cours à partir de ${c.heureMin} h.`;
+        }
+        break;
+      case "heure_fin":
+        if (slot.heureFin > c.heureFinMax) {
+          return `La formation impose une fin de cours au plus tard à ${c.heureFinMax} h (fin de créneau incluse).`;
+        }
+        break;
+      case "pause_midi":
+        if (
+          formationPauseChevaucheCreneau(
+            slot.heureDebut,
+            slot.heureFin,
+            c.heureDebut,
+            c.heureFin
+          )
+        ) {
+          return "Créneau en conflit avec la pause méridienne de la formation.";
+        }
+        break;
+    }
+  }
+  return null;
+}
+
+/** Options du blocage dur (ex. gabarit « semaine type » du mode répété). */
+export type SessionPlacementBlockerOptions = {
+  /**
+   * Gabarit du mode répété : ne pas bloquer sur les **jours fériés** (la réplication retomberait
+   * souvent sur des fériés ; la **date de démarrage** reste toujours appliquée).
+   */
+  ignorerJoursFeriesPourGabaritHebdoRepete?: boolean;
+};
+
 /**
  * Motif du premier échec si la séance ne respecte pas les règles de placement
- * (grille, contraintes professeur, salle, cohorte, volumes).
+ * (grille, contraintes formation, professeur, matière, salle, cohorte, volumes).
  * `placed` doit être l’ensemble du planning **sans** `trial` (ou avec l’ancienne place de `trial` exclue).
  */
 export function sessionPlacementBlocker(
   trial: PlanningSession,
   demand: PlanningDemand,
   placed: readonly PlanningSession[],
-  grid: PlanningGridConfig
+  grid: PlanningGridConfig,
+  blockerOptions?: SessionPlacementBlockerOptions
 ): string | null {
   const slot = trial.assignedSlot;
   if (slot == null) return "Créneau non défini.";
   if (!slotWithinGrid(slot, grid)) {
     return "Créneau hors de la grille horaire autorisée.";
+  }
+
+  const blocFormation = formationPlacementBlocker(slot, demand.contraintesFormation);
+  if (blocFormation) return blocFormation;
+
+  const skipFeries =
+    blockerOptions?.ignorerJoursFeriesPourGabaritHebdoRepete === true;
+
+  const ddForm = demand.dateDemarrageIso?.trim();
+  if (ddForm && parseIsoDateOnlyUtc(ddForm)) {
+    if (!parseSemaine1LundiIso(grid.semaine1LundiIso)) {
+      return "Calendrier incomplet : indiquez le lundi de la semaine 1 pour respecter les dates de démarrage.";
+    }
+    const slotDay = isoDateCivilPourSlot(grid, slot);
+    if (!slotDay) {
+      return "Impossible de déterminer la date civile du créneau (date de démarrage formation).";
+    }
+    if (slotDay < ddForm) {
+      return `Avant la date de démarrage de la formation (${ddForm}).`;
+    }
+  }
+
+  if (!skipFeries) {
+    const paysLoc = demand.localisationPays?.trim();
+    if (paysLoc) {
+      if (!parseSemaine1LundiIso(grid.semaine1LundiIso)) {
+        return "Calendrier incomplet : indiquez le lundi de la semaine 1 pour appliquer les jours fériés.";
+      }
+      const civil = dateCivilPourSlot(grid, slot);
+      if (!civil) {
+        return "Impossible de déterminer la date civile du créneau.";
+      }
+      if (!holidaysCalculatorAvailable(paysLoc, demand.localisationRegion)) {
+        const sub = demand.localisationRegion?.trim();
+        return sub
+          ? `Calcul des jours fériés indisponible pour « ${paysLoc} » / « ${sub} ».`
+          : `Calcul des jours fériés indisponible pour « ${paysLoc} ».`;
+      }
+      if (
+        estJourFeriePourLocalisation(civil, paysLoc, demand.localisationRegion)
+      ) {
+        return `Jour férié (${paysLoc}) — cours non autorisé ce jour-là.`;
+      }
+    }
   }
 
   const joursOk = joursAutorisesJoursTravail(demand.contraintesProfesseur);
@@ -524,9 +648,13 @@ function canPlaceSession(
   trial: PlanningSession,
   demand: PlanningDemand,
   placed: readonly PlanningSession[],
-  grid: PlanningGridConfig
+  grid: PlanningGridConfig,
+  blockerOptions?: SessionPlacementBlockerOptions
 ): boolean {
-  return sessionPlacementBlocker(trial, demand, placed, grid) === null;
+  return (
+    sessionPlacementBlocker(trial, demand, placed, grid, blockerOptions) ===
+    null
+  );
 }
 
 /**
@@ -570,6 +698,15 @@ export function scoreSessionContrainte(
     if (c.actif && c.kind === "plage_horaire") {
       score += 7;
     }
+  }
+  if (demand.contraintesFormation.length > 0) {
+    score += 24 + demand.contraintesFormation.length * 6;
+  }
+  if (demand.localisationPays?.trim()) {
+    score += 22;
+  }
+  if (demand.dateDemarrageIso?.trim()) {
+    score += 18;
   }
   return score;
 }
@@ -745,14 +882,218 @@ function countUnscheduledSessions(sessions: readonly PlanningSession[]): number 
   return n;
 }
 
+/** Première semaine où existe au moins un créneau 1 h avec jour/heure grille + contraintes formation + date civile ≥ `dd`. */
+function minSemainePourDemarrageDemande(
+  grid: PlanningGridConfig,
+  demand: PlanningDemand,
+  dd: string,
+  nw: number
+): number | null {
+  const lastStart = grid.heureFin - 1;
+  for (let w = 1; w <= nw; w += 1) {
+    for (const jour of grid.joursSemaine) {
+      for (let h = grid.heureDebut; h <= lastStart; h += 1) {
+        const slot: AssignedSlot = {
+          semaine: w,
+          jour,
+          heureDebut: h,
+          heureFin: h + 1,
+        };
+        if (formationPlacementBlocker(slot, demand.contraintesFormation)) {
+          continue;
+        }
+        const day = isoDateCivilPourSlot(grid, slot);
+        if (day && day >= dd) return w;
+      }
+    }
+  }
+  return null;
+}
+
+/** Semaine logique minimale pour une demande (1 si pas de date valide ou calendrier absent). */
+function semaineDemarragePourDemande(
+  grid: PlanningGridConfig,
+  demand: PlanningDemand,
+  nw: number
+): number {
+  const dd = demand.dateDemarrageIso?.trim();
+  if (!dd || !parseIsoDateOnlyUtc(dd)) return 1;
+  if (!parseSemaine1LundiIso(grid.semaine1LundiIso ?? "")) return 1;
+  const mw = minSemainePourDemarrageDemande(grid, demand, dd, nw);
+  return mw == null ? 1 : Math.min(mw, nw);
+}
+
+/**
+ * Regroupe les demandes par **première semaine** où un cours peut s’ouvrir (date + contraintes formation).
+ * Les semaines sont traitées dans l’ordre croissant ; placement séquentiel avec `seedPlaced`.
+ */
+function grouperDemandsParSemaineDemarrage(
+  grid: PlanningGridConfig,
+  demands: readonly PlanningDemand[]
+): Map<number, PlanningDemand[]> {
+  const nw = nombreSemainesGrid(grid);
+  const map = new Map<number, PlanningDemand[]>();
+  for (const d of demands) {
+    const w = semaineDemarragePourDemande(grid, d, nw);
+    let arr = map.get(w);
+    if (!arr) {
+      arr = [];
+      map.set(w, arr);
+    }
+    arr.push(d);
+  }
+  return map;
+}
+
+function buildWeeklyTemplateForGroup(
+  data: PlanningData,
+  demandIds: ReadonlySet<string>,
+  nw: number,
+  maxBloc: PlanningMaxSeanceHeuresDecoupage
+): PlanningData {
+  const demands = data.demands.filter((d) => demandIds.has(d.id));
+  const sessions = data.sessions.filter((s) => demandIds.has(s.demandId));
+  return buildWeeklyTemplatePlanningData(
+    { ...data, demands, sessions },
+    nw,
+    maxBloc
+  );
+}
+
+/** Réplique les séances planifiées d’un gabarit pour **une** plage de semaines `Wp` consécutives. */
+function repliquerGabaritPourPlage(
+  periodResult: PlanningData,
+  templateWeek: number,
+  Wp: number,
+  weekGlobal: number,
+  groupeIndex: number,
+  outerPeriodIndex: number
+): PlanningSession[] {
+  const out: PlanningSession[] = [];
+  for (const s of periodResult.sessions) {
+    if (s.statut !== "scheduled" || s.assignedSlot == null) {
+      if (outerPeriodIndex === 0) {
+        out.push(s);
+      }
+      continue;
+    }
+    const baseSlot = s.assignedSlot;
+    for (let k = 0; k < Wp; k += 1) {
+      const sem = weekGlobal + k;
+      if (sem < templateWeek) continue;
+      out.push({
+        ...s,
+        id: `${s.id}_G${groupeIndex}_P${outerPeriodIndex}_S${sem}`,
+        assignedSlot: {
+          ...baseSlot,
+          semaine: sem,
+        },
+      });
+    }
+  }
+  return out;
+}
+
+/** Place les périodes pour un groupe ; renvoie données avec séances du dernier passage utile + liste répliquée + cumul pour seed. */
+function placerEtRepliquerGabaritGroupe(
+  weeklyData: PlanningData,
+  placementGrid: PlanningGridConfig,
+  templateWeek: number,
+  P: number,
+  nw: number,
+  groupeIndex: number,
+  seedPlaced: readonly PlanningSession[]
+): { replicated: PlanningSession[]; cumulativeSlice: PlanningSession[] } {
+  const greedyOptsBase = {
+    slotsSemaineFixe: templateWeek,
+    ignorerJoursFeriesPourGabaritHebdoRepete: true,
+    seedPlaced,
+  } as const;
+
+  const blockSizes = splitNwIntoNearlyEqualParts(nw, P);
+  const baseline = scheduleGreedy(weeklyData, placementGrid, {
+    orderVariantSalt: groupeIndex * 10_009,
+    ...greedyOptsBase,
+  });
+  const baselineU = countUnscheduledSessions(baseline.sessions);
+
+  const periodResults: PlanningData[] = [baseline];
+  for (let p = 1; p < P; p += 1) {
+    let periodResult = scheduleGreedy(weeklyData, placementGrid, {
+      orderVariantSalt: groupeIndex * 10_009 + p * 97_771,
+      ...greedyOptsBase,
+    });
+    if (countUnscheduledSessions(periodResult.sessions) > baselineU) {
+      periodResult = baseline;
+    }
+    periodResults.push(periodResult);
+  }
+
+  let weekGlobal = 1;
+  const replicated: PlanningSession[] = [];
+  for (let p = 0; p < P; p += 1) {
+    const Wp = blockSizes[p]!;
+    const periodResult = periodResults[p]!;
+    replicated.push(
+      ...repliquerGabaritPourPlage(
+        periodResult,
+        templateWeek,
+        Wp,
+        weekGlobal,
+        groupeIndex,
+        p
+      )
+    );
+    weekGlobal += Wp;
+  }
+
+  const cumulativeSlice = replicated.filter(
+    (s) => s.statut === "scheduled" && s.assignedSlot != null
+  );
+
+  return { replicated, cumulativeSlice };
+}
+
+function sessionsSansCreneauxAvantDemarrage(
+  grid: PlanningGridConfig,
+  sessions: readonly PlanningSession[],
+  demandById: Map<string, PlanningDemand>
+): PlanningSession[] {
+  const lundiOk = parseSemaine1LundiIso(grid.semaine1LundiIso ?? "");
+  return sessions.map((s) => {
+    if (s.statut !== "scheduled" || s.assignedSlot == null) return s;
+    const d = demandById.get(s.demandId);
+    const dd = d?.dateDemarrageIso?.trim();
+    if (!dd || !parseIsoDateOnlyUtc(dd) || !lundiOk) return s;
+    const slotDay = isoDateCivilPourSlot(grid, s.assignedSlot);
+    if (!slotDay || slotDay >= dd) return s;
+    return {
+      ...s,
+      statut: "unscheduled" as const,
+      assignedSlot: undefined,
+      assignedSalleId: undefined,
+    };
+  });
+}
+
 function greedyPlaceOrdered(
   data: PlanningData,
   grid: PlanningGridConfig,
   sorted: readonly PlanningSession[],
   demandById: Map<string, PlanningDemand>,
-  matiereById: Map<string, MatiereReference>
+  matiereById: Map<string, MatiereReference>,
+  blockerOptions?: SessionPlacementBlockerOptions,
+  slotsSemaineFixe?: number,
+  seedPlaced?: readonly PlanningSession[]
 ): PlanningSession[] {
   const placed: PlanningSession[] = [];
+  if (seedPlaced) {
+    for (const s of seedPlaced) {
+      if (s.statut === "scheduled" && s.assignedSlot != null) {
+        placed.push(s);
+      }
+    }
+  }
   const out: PlanningSession[] = [];
 
   for (let placementIndex = 0; placementIndex < sorted.length; placementIndex += 1) {
@@ -777,10 +1118,11 @@ function greedyPlaceOrdered(
       cost: number;
       lex: string;
     }> = [];
-    for (const slot of slotsFor(grid, session.duree)) {
+    for (const slot of slotsFor(grid, session.duree, slotsSemaineFixe)) {
       for (const salle of salleCandidates(demand)) {
         const trial = sessionScheduled(session, slot, salle);
-        if (!canPlaceSession(trial, demand, placed, grid)) continue;
+        if (!canPlaceSession(trial, demand, placed, grid, blockerOptions))
+          continue;
         const cost = softPlacementCost(
           trial,
           demand,
@@ -832,8 +1174,12 @@ const SLOTS_CACHE = new WeakMap<
 
 function slotsFor(
   grid: PlanningGridConfig,
-  duree: PlanningSeanceDureeHeures
+  duree: PlanningSeanceDureeHeures,
+  semaineFixe?: number
 ): AssignedSlot[] {
+  if (semaineFixe != null) {
+    return iterCandidateSlotsPourSemaineFixe(grid, duree, semaineFixe);
+  }
   let rec = SLOTS_CACHE.get(grid);
   if (!rec) {
     rec = {};
@@ -860,6 +1206,20 @@ function slotsFor(
 export type ScheduleGreedyOptions = {
   /** Décale les tirages d’ordre entre deux appels (ex. périodes trimestrielles avec motifs différents). */
   orderVariantSalt?: number;
+  /**
+   * Gabarit répété : ne tester que les créneaux de cette semaine logique (1-based).
+   * La grille doit avoir **`nombreSemaines`** ≥ cette valeur.
+   */
+  slotsSemaineFixe?: number;
+  /**
+   * Gabarit répété : voir {@link SessionPlacementBlockerOptions.ignorerJoursFeriesPourGabaritHebdoRepete}.
+   */
+  ignorerJoursFeriesPourGabaritHebdoRepete?: boolean;
+  /**
+   * Séances déjà planifiées (autres gabarits / groupes) prises en compte pour les collisions
+   * prof / formation / salle (mode répété multi-groupes).
+   */
+  seedPlaced?: readonly PlanningSession[];
 };
 
 export function scheduleGreedy(
@@ -874,13 +1234,30 @@ export function scheduleGreedy(
     data.references.matieres.map((m) => [m.id, m] as const)
   );
 
+  const blockerOpts: SessionPlacementBlockerOptions | undefined =
+    options?.ignorerJoursFeriesPourGabaritHebdoRepete
+      ? { ignorerJoursFeriesPourGabaritHebdoRepete: true }
+      : undefined;
+
+  const sf = options?.slotsSemaineFixe;
+  const seed = options?.seedPlaced;
+
   const orders = collectGreedySessionOrders(
     data,
     demandById,
     matiereById,
     options?.orderVariantSalt ?? 0
   );
-  let best = greedyPlaceOrdered(data, grid, orders[0]!, demandById, matiereById);
+  let best = greedyPlaceOrdered(
+    data,
+    grid,
+    orders[0]!,
+    demandById,
+    matiereById,
+    blockerOpts,
+    sf,
+    seed
+  );
   let bestU = countUnscheduledSessions(best);
 
   if (bestU > 0) {
@@ -890,7 +1267,10 @@ export function scheduleGreedy(
         grid,
         orders[i]!,
         demandById,
-        matiereById
+        matiereById,
+        blockerOpts,
+        sf,
+        seed
       );
       const u = countUnscheduledSessions(cand);
       if (u < bestU) {
@@ -921,8 +1301,9 @@ function splitNwIntoNearlyEqualParts(nw: number, parts: number): number[] {
 
 /**
  * Semaine type : le volume annuel des lignes est ramené à une **moyenne par semaine de gabarit**
- * (`buildWeeklyTemplatePlanningData`), placé sur une semaine, puis copié sur chaque semaine
- * S1…SN (ou sur des **blocs** successifs si `nombrePeriodes` &gt; 1).
+ * (`buildWeeklyTemplatePlanningData`), puis **un gabarit par groupe de demandes** partageant la même
+ * première semaine de démarrage possible (date + contraintes formation). Chaque gabarit est placé avec
+ * `seedPlaced` = séances déjà répliquées des groupes précédents (collisions prof / formation / salle).
  *
  * Les séances `demand` / heures affichées dans les objets `demands` du résultat restent celles
  * du **`data` d’entrée** (contrat formation) ; seules les `sessions` reflètent le planning généré.
@@ -933,6 +1314,10 @@ function splitNwIntoNearlyEqualParts(nw: number, parts: number): number[] {
  *   applique un nouveau placement hebdo (sel) pour la même charge hebdomadaire moyenne ; si un segment
  *   produit **plus** de non planifiées que le premier passage de référence, on **réutilise** le placement
  *   du premier segment pour ce bloc (pas de dégradation volontaire).
+ *
+ * **Dates de démarrage** : respectées par groupe (`sessionPlacementBlocker`) ; pas de réplica sur les
+ * semaines **avant** la semaine gabarit du groupe. Les **jours fériés** sont ignorés **uniquement** pendant
+ * le placement du gabarit (`ignorerJoursFeriesPourGabaritHebdoRepete`).
  */
 export type ScheduleGreedyRepetitionOptions = {
   nombrePeriodes?: number;
@@ -951,61 +1336,44 @@ export function scheduleGreedyRepetitionMode(
     return scheduleGreedy(data, grid);
   }
 
-  const weeklyData = buildWeeklyTemplatePlanningData(data, nw, maxBloc);
-  const singleWeekGrid: PlanningGridConfig = {
-    ...grid,
-    nombreSemaines: 1,
-  };
+  const placementGrid: PlanningGridConfig = { ...grid, nombreSemaines: nw };
+  const demandByIdFinal = new Map(
+    data.demands.map((d) => [d.id, d] as const)
+  );
 
-  const blockSizes = splitNwIntoNearlyEqualParts(nw, P);
-  const baseline = scheduleGreedy(weeklyData, singleWeekGrid, {
-    orderVariantSalt: 0,
-  });
-  const baselineU = countUnscheduledSessions(baseline.sessions);
+  const groupMap = grouperDemandsParSemaineDemarrage(grid, data.demands);
+  const sortedGroups = [...groupMap.entries()].sort((a, b) => a[0] - b[0]);
 
-  let weekGlobal = 1;
   const expanded: PlanningSession[] = [];
+  let cumulativeSeed: PlanningSession[] = [];
 
-  for (let p = 0; p < P; p += 1) {
-    const Wp = blockSizes[p]!;
-    let periodResult =
-      p === 0
-        ? baseline
-        : scheduleGreedy(weeklyData, singleWeekGrid, {
-            orderVariantSalt: p * 97_771,
-          });
-    if (
-      p > 0 &&
-      countUnscheduledSessions(periodResult.sessions) > baselineU
-    ) {
-      periodResult = baseline;
-    }
+  for (let gi = 0; gi < sortedGroups.length; gi += 1) {
+    const [templateWeek, demandsGroupe] = sortedGroups[gi]!;
+    const ids = new Set(demandsGroupe.map((d) => d.id));
+    const weeklyData = buildWeeklyTemplateForGroup(data, ids, nw, maxBloc);
+    if (weeklyData.sessions.length === 0) continue;
 
-    for (const s of periodResult.sessions) {
-      if (s.statut !== "scheduled" || s.assignedSlot == null) {
-        if (p === 0) {
-          expanded.push(s);
-        }
-        continue;
-      }
-      const baseSlot = s.assignedSlot;
-      for (let k = 0; k < Wp; k += 1) {
-        const sem = weekGlobal + k;
-        expanded.push({
-          ...s,
-          id: `${s.id}_P${p}_S${sem}`,
-          assignedSlot: {
-            ...baseSlot,
-            semaine: sem,
-          },
-        });
-      }
-    }
-    weekGlobal += Wp;
+    const { replicated, cumulativeSlice } = placerEtRepliquerGabaritGroupe(
+      weeklyData,
+      placementGrid,
+      templateWeek,
+      P,
+      nw,
+      gi,
+      cumulativeSeed
+    );
+    expanded.push(...replicated);
+    cumulativeSeed = cumulativeSeed.concat(cumulativeSlice);
   }
+
+  const sessionsCorrigees = sessionsSansCreneauxAvantDemarrage(
+    placementGrid,
+    expanded,
+    demandByIdFinal
+  );
 
   return {
     ...data,
-    sessions: expanded,
+    sessions: sessionsCorrigees,
   };
 }

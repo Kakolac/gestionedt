@@ -10,6 +10,8 @@ import type { FormationRow } from "@/components/administration/ModifierFormation
 import { ModifierFormationModal } from "@/components/administration/ModifierFormationModal";
 import type { ProfesseurOption } from "@/components/administration/FormationProfesseursChecklist";
 import { SupprimerFormationConfirmModal } from "@/components/administration/SupprimerFormationConfirmModal";
+import { formatFormationContraintesListeCourte } from "@/lib/formationContraintes";
+import { libellePaysLocalisationAdmin } from "@/lib/planning/planning-public-holidays";
 
 type Props = {
   rows: FormationRow[];
@@ -53,6 +55,9 @@ export function GestionFormationPanel({
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50/80">
               <th className="px-4 py-3 font-semibold text-slate-800">Nom</th>
+              <th className="min-w-[7rem] px-4 py-3 font-semibold text-slate-800">
+                Début
+              </th>
               <th className="px-4 py-3 font-semibold text-slate-800">
                 Description
               </th>
@@ -63,6 +68,12 @@ export function GestionFormationPanel({
                 Professeurs
               </th>
               <th className="px-4 py-3 font-semibold text-slate-800">Heures</th>
+              <th className="min-w-[6rem] px-4 py-3 font-semibold text-slate-800">
+                Loc. fériés
+              </th>
+              <th className="px-4 py-3 font-semibold text-slate-800">
+                Planning formation
+              </th>
               <th className="px-4 py-3 font-semibold text-slate-800">
                 Actions
               </th>
@@ -71,7 +82,7 @@ export function GestionFormationPanel({
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td className="px-4 py-6 text-slate-500" colSpan={6}>
+                <td className="px-4 py-6 text-slate-500" colSpan={9}>
                   Aucune formation. Utilisez « Nouvelle formation » pour définir un
                   regroupement (nom, description, matières avec heures prévues par matière,
                   intervenants).
@@ -85,6 +96,9 @@ export function GestionFormationPanel({
                 >
                   <td className="px-4 py-3 font-medium text-slate-800">
                     {row.nom}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-xs tabular-nums text-slate-700">
+                    {row.dateDemarrageIso?.trim() ? row.dateDemarrageIso.trim() : "—"}
                   </td>
                   <td className="max-w-[min(40vw,14rem)] px-4 py-3 text-xs leading-snug text-slate-600">
                     <span className="line-clamp-3">{row.description || "—"}</span>
@@ -112,6 +126,22 @@ export function GestionFormationPanel({
                     {row.nombreHeures}
                     <span className="mt-0.5 block text-[0.65rem] font-normal text-slate-500">
                       total
+                    </span>
+                  </td>
+                  <td className="max-w-[min(28vw,10rem)] px-4 py-3 text-[0.65rem] leading-snug text-slate-600">
+                    <span className="line-clamp-2">
+                      {!row.localisationPays?.trim()
+                        ? "—"
+                        : `${libellePaysLocalisationAdmin(row.localisationPays)}${
+                            row.localisationRegion?.trim()
+                              ? ` · ${row.localisationRegion.trim()}`
+                              : ""
+                          }`}
+                    </span>
+                  </td>
+                  <td className="max-w-[min(56vw,22rem)] px-4 py-3 text-[0.65rem] leading-snug text-slate-600">
+                    <span className="line-clamp-3">
+                      {formatFormationContraintesListeCourte(row.contraintes)}
                     </span>
                   </td>
                   <td className="px-4 py-3">

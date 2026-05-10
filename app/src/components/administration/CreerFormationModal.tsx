@@ -9,6 +9,9 @@ import {
   AjouterLigneFormationModal,
   type AjouterLigneFormationResult,
 } from "@/components/administration/AjouterLigneFormationModal";
+import { FormationContraintesEditor } from "@/components/administration/FormationContraintesEditor";
+import { FormationLocalisationEditor } from "@/components/administration/FormationLocalisationEditor";
+import { isoDateCalendrierLocal } from "@/lib/planning/planning-public-holidays";
 import type { ProfesseurOption } from "@/components/administration/FormationProfesseursChecklist";
 
 export type MatiereOptionCourte = { id: string; nom: string };
@@ -190,6 +193,35 @@ export function CreerFormationModal({
                 className="resize-y rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/30 disabled:opacity-60"
               />
             </label>
+
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="font-medium text-slate-800">
+                Date de démarrage <span className="font-normal text-slate-500">(AAAA-MM-JJ)</span>
+              </span>
+              <input
+                name="dateDemarrageIso"
+                type="date"
+                required
+                disabled={pending}
+                defaultValue={isoDateCalendrierLocal(new Date())}
+                className="rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/30 disabled:opacity-60"
+              />
+              <span className="text-xs text-slate-500">
+                Premier jour civil de la formation : sert au calendrier du planning (lundi S1 = lundi de la
+                même semaine).
+              </span>
+            </label>
+
+            <FormationContraintesEditor
+              defaultContraintes={[]}
+              freezeDuringSubmit={pending}
+            />
+
+            <FormationLocalisationEditor
+              defaultPays=""
+              defaultRegion=""
+              freezeDuringSubmit={pending}
+            />
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-[min(4vw,0.875rem)]">
               <div className="flex flex-wrap items-center justify-between gap-2">

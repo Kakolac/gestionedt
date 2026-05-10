@@ -1,7 +1,25 @@
 import mongoose, { Schema, model, models, type InferSchemaType } from "mongoose";
+import { defaultFormationContraintesMongo } from "@/lib/formationContraintes";
+import { FORMATION_CONTRAINTE_KINDS } from "@/lib/formationContraintes.shared";
 
 /** Garde le nom de collection MongoDB existant (`contenupedagogiques`). */
 export const FORMATION_MONGODB_COLLECTION = "contenupedagogiques" as const;
+
+const FormationContrainteSchema = new Schema(
+  {
+    kind: {
+      type: String,
+      required: true,
+      enum: [...FORMATION_CONTRAINTE_KINDS],
+    },
+    heureDebut: Number,
+    heureFin: Number,
+    heureMin: Number,
+    heureFinMax: Number,
+    joursSemaine: [Number],
+  },
+  { _id: false }
+);
 
 const FormationLigneSchema = new Schema(
   {
@@ -40,6 +58,42 @@ const FormationSchema = new Schema(
     },
     /** Somme des heures prévues par ligne (dérivé à l’enregistrement). */
     nombreHeures: { type: Number, required: true, min: 0 },
+    /**
+     * Contraintes planning obligatoires pour cette formation (pause midi, plage jour,
+     * jours). Défaut à la création si absent ; les anciennes fiches peuvent être
+     * complétées à l’enregistrement depuis l’administration.
+     */
+    contraintes: {
+      type: [FormationContrainteSchema],
+      default() {
+        return defaultFormationContraintesMongo();
+      },
+    },
+    /** ISO 3166-1 alpha-2 / alpha-3 — liste fermée côté app ; vide = pas de filtre jours fériés. */
+    localisationPays: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      maxlength: 3,
+      default: "",
+    },
+    /** Subdivision pour `date-holidays` (ex. WAL), optionnelle. */
+    localisationRegion: {
+      type: String,
+      trim: true,
+      maxlength: 32,
+      default: "",
+    },
+    /**
+     * Premier jour civil de la formation (`YYYY-MM-DD`, interprété en UTC date-only).
+     * Obligatoire à la création / mise à jour via l’admin ; les anciennes fiches peuvent être vides jusqu’à édition.
+     */
+    dateDemarrageIso: {
+      type: String,
+      trim: true,
+      maxlength: 10,
+      default: "",
+    },
   },
   { timestamps: true }
 );

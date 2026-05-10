@@ -19,6 +19,12 @@ import { PlanningComparisonStats } from "@/components/planning/PlanningCompariso
 import { PlanningProfessorColorPickPopover } from "@/components/planning/PlanningProfessorColorPickPopover";
 import { listMergedBlocksForGridView } from "@/lib/planning/planning-grid-view-blocks";
 import { normalizePlanningExport } from "@/lib/planning/planning-normalize";
+import {
+  deriveSemaine1LundiIsoDepuisExportRaw,
+  exportRawHasFormations,
+  exportRawHasFormationLocalisation,
+  parseSemaine1LundiIso,
+} from "@/lib/planning/planning-public-holidays";
 import { collectProfessorConstraintIssuesAfterSwap } from "@/lib/planning/planning-manual-swap-constraints";
 import { trySwapMergedBlockSessions } from "@/lib/planning/planning-manual-swap";
 import {
@@ -122,6 +128,7 @@ function planningBuilderResetKey(
     grid.joursSemaine.join(","),
     modeRepetition ? "rep" : "std",
     repetitionNombrePeriodes,
+    grid.semaine1LundiIso ?? "",
   ].join("|");
 }
 
@@ -172,6 +179,9 @@ type PlanningBuilderBodyProps = {
   gridEffectif: PlanningGridConfig;
   modeRepetition: boolean;
   repetitionNombrePeriodes: 1 | 3 | 4;
+  besoinAncreCalendaire: boolean;
+  semaine1LundiIsoInput: string;
+  onSemaine1LundiIsoInputChange: (value: string) => void;
 };
 
 function PlanningBuilderBody({
@@ -179,6 +189,9 @@ function PlanningBuilderBody({
   gridEffectif,
   modeRepetition,
   repetitionNombrePeriodes,
+  besoinAncreCalendaire,
+  semaine1LundiIsoInput,
+  onSemaine1LundiIsoInputChange,
 }: PlanningBuilderBodyProps) {
   const horizonNs = nombreSemainesGrid(gridEffectif);
 
@@ -188,8 +201,19 @@ function PlanningBuilderBody({
     Math.max(1, semaineCourante)
   );
 
+  const autoSemaine1DepuisFormations = useMemo(
+    () => deriveSemaine1LundiIsoDepuisExportRaw(rawData),
+    [rawData]
+  );
+
   const basePlanningData = useMemo(() => {
     const normalized = normalizePlanningExport(rawData, gridEffectif);
+    const hasFormations = exportRawHasFormations(rawData);
+    const anchorOk =
+      parseSemaine1LundiIso(gridEffectif.semaine1LundiIso) != null;
+    if (hasFormations && !anchorOk) {
+      return normalized;
+    }
     if (modeRepetition) {
       return scheduleGreedyRepetitionMode(normalized, gridEffectif, {
         nombrePeriodes: repetitionNombrePeriodes,
@@ -560,6 +584,65 @@ function PlanningBuilderBody({
             : "space-y-[1.25vh]"
         }
       >
+        {besoinAncreCalendaire ? (
+          <div className="rounded-2xl border border-indigo-200/90 bg-indigo-50/70 px-[min(4vw,1.25rem)] py-[min(2vh,1rem)] shadow-sm">
+            <p className="text-[clamp(0.82rem,1.15vw,0.95rem)] font-semibold text-indigo-950">
+              Ancrage calendaire
+            </p>
+            <p className="mt-1 text-[clamp(0.78rem,1.05vw,0.88rem)] text-indigo-900/90">
+              Les <strong>dates sous les colonnes</strong> de la grille et le calcul des{" "}
+              <strong>jours fériés</strong> utilisent le <strong>lundi</strong> de la semaine{" "}
+              <strong>S1</strong>. Il est <strong>déduit</strong> du plus tôt des{" "}
+              <strong>dates de démarrage</strong> des formations (lundi de la même semaine civile
+              lun–dim que chaque date). Vous pouvez forcer un autre lundi ci-dessous.
+            </p>
+            {exportRawHasFormationLocalisation(rawData) ? (
+              <p className="mt-2 text-[clamp(0.76rem,1.05vw,0.86rem)] text-indigo-900/85">
+                Une formation a une <strong>localisation pays</strong> : sans lundi S1 valide, les
+                contraintes « jour férié » ne s&apos;appliquent pas et le placement automatique reste
+                désactivé.
+              </p>
+            ) : null}
+            {autoSemaine1DepuisFormations ? (
+              <p className="mt-2 text-[clamp(0.78rem,1.05vw,0.88rem)] text-slate-800">
+                <span className="font-medium text-slate-900">Lundi S1 proposé : </span>
+                <span className="tabular-nums">{autoSemaine1DepuisFormations}</span>
+                {parseSemaine1LundiIso(gridEffectif.semaine1LundiIso) != null ? (
+                  <span className="ml-2 text-emerald-800">
+                    (actif — grille alignée)
+                  </span>
+                ) : null}
+              </p>
+            ) : (
+              <p className="mt-2 text-[clamp(0.78rem,1.05vw,0.88rem)] font-medium text-amber-900">
+                Aucune <strong>dateDemarrageIso</strong> exploitable dans ce jeu : renseignez le{" "}
+                <strong>lundi</strong> manuellement ou chargez des formations avec date de démarrage
+                renseignée.
+              </p>
+            )}
+            <label className="mt-[1.5vh] flex flex-wrap items-center gap-[2vw] text-[clamp(0.82rem,1.15vw,0.95rem)] text-slate-800">
+              <span className="font-medium">Forcer le lundi de la semaine 1</span>
+              <input
+                type="date"
+                value={semaine1LundiIsoInput}
+                onChange={(e) => onSemaine1LundiIsoInputChange(e.target.value)}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/25"
+              />
+            </label>
+            {semaine1LundiIsoInput.trim() !== "" &&
+            parseSemaine1LundiIso(semaine1LundiIsoInput.trim()) == null ? (
+              <p className="mt-2 text-[clamp(0.78rem,1.05vw,0.88rem)] font-medium text-amber-800">
+                La date choisie doit être un <strong>lundi</strong>.
+              </p>
+            ) : null}
+            {parseSemaine1LundiIso(gridEffectif.semaine1LundiIso) == null ? (
+              <p className="mt-2 text-[clamp(0.78rem,1.05vw,0.88rem)] text-slate-700">
+                Corrigez le lundi ci-dessus ou les dates de démarrage des formations pour activer le
+                placement glouton et l&apos;affichage des dates sur la grille.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         <div className="flex shrink-0 flex-wrap items-end justify-between gap-[2vw]">
           <h2 className="text-[clamp(0.95rem,1.4vw,1.1rem)] font-semibold text-indigo-950">
             Grille {horizonNs > 1 ? "de la semaine sélectionnée" : "hebdomadaire"}
@@ -867,22 +950,72 @@ export function PlanningBuilder({
   modeRepetition = false,
   repetitionNombrePeriodes = 1,
 }: PlanningBuilderProps) {
+  const [semaine1LundiIsoInput, setSemaine1LundiIsoInput] = useState("");
+
+  const autoSemaine1LundiIso = useMemo(
+    () => deriveSemaine1LundiIsoDepuisExportRaw(rawData),
+    [rawData]
+  );
+
+  const rawFingerprint = useMemo(() => {
+    const m = rawData.meta?.exportedAt ?? "";
+    const fs = rawData.formations;
+    const ids =
+      Array.isArray(fs)
+        ? [...fs]
+            .map((f) =>
+              typeof f === "object" &&
+              f !== null &&
+              "_id" in (f as Record<string, unknown>)
+                ? String((f as { _id: unknown })._id)
+                : ""
+            )
+            .sort()
+            .join(",")
+        : "";
+    return `${m}|${ids}`;
+  }, [rawData]);
+
+  useEffect(() => {
+    setSemaine1LundiIsoInput("");
+  }, [rawFingerprint]);
+
   const gridEffectif = useMemo(() => {
     const base = { ...DEFAULT_PLANNING_GRID, ...gridConfig };
+    let merged = base;
     if (nombreSemainesRepetition != null) {
       const ns = Math.min(
         52,
         Math.max(1, Math.floor(Number(nombreSemainesRepetition)) || 1)
       );
-      return { ...base, nombreSemaines: ns };
+      merged = { ...merged, nombreSemaines: ns };
     }
-    return base;
-  }, [gridConfig, nombreSemainesRepetition]);
+    const manual = semaine1LundiIsoInput.trim();
+    const manualOk =
+      manual !== "" && parseSemaine1LundiIso(manual) != null;
+    const mergedSemaine1 = manualOk
+      ? manual
+      : (autoSemaine1LundiIso ?? "");
+    if (mergedSemaine1) {
+      merged = { ...merged, semaine1LundiIso: mergedSemaine1 };
+    }
+    return merged;
+  }, [
+    gridConfig,
+    nombreSemainesRepetition,
+    semaine1LundiIsoInput,
+    autoSemaine1LundiIso,
+  ]);
 
   const periodes =
     repetitionNombrePeriodes === 3 || repetitionNombrePeriodes === 4
       ? repetitionNombrePeriodes
       : (1 as const);
+
+  const besoinAncreCalendaire = useMemo(
+    () => exportRawHasFormations(rawData),
+    [rawData]
+  );
 
   const resetKey = useMemo(
     () =>
@@ -897,6 +1030,9 @@ export function PlanningBuilder({
       gridEffectif={gridEffectif}
       modeRepetition={modeRepetition}
       repetitionNombrePeriodes={periodes}
+      besoinAncreCalendaire={besoinAncreCalendaire}
+      semaine1LundiIsoInput={semaine1LundiIsoInput}
+      onSemaine1LundiIsoInputChange={setSemaine1LundiIsoInput}
     />
   );
 }
