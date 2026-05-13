@@ -461,34 +461,49 @@ function PlanningBuilderBody({
     setReplacementResult(null);
     setReplacementProgress({ current: 0, total: unscheduledBefore });
 
-    // Phase 1 : Animation initiale jusqu'à 30% AVANT le calcul
-    const targetBeforeCalc = Math.floor(unscheduledBefore * 0.30);
-    for (let i = 0; i <= targetBeforeCalc; i++) {
-      setReplacementProgress({ current: i, total: unscheduledBefore });
-      await new Promise((resolve) => setTimeout(resolve, Math.max(10, 400 / targetBeforeCalc)));
-    }
-
     try {
-      console.log(`[Replacement] Début du replacement de ${unscheduledBefore} séances non planifiées...`);
+      console.log(`[Replacement] Début du replacement de ${unscheduledBefore} séances...`);
       const startTime = Date.now();
       
-      // Phase 2 : Calcul (bloque le navigateur - c'est ici la pause)
-      const result = completerPlanningAvecSessionsNonPlanifiees(
-        planningData,
-        gridEffectif
-      );
-      
-      const calcDuration = Date.now() - startTime;
-      console.log(`[Replacement] Replacement terminé en ${calcDuration}ms !`);
-      
-      // Phase 3 : Animation de 30% à 100% APRÈS le calcul
-      for (let i = targetBeforeCalc + 1; i <= unscheduledBefore; i++) {
-        setReplacementProgress({ current: i, total: unscheduledBefore });
-        await new Promise((resolve) => setTimeout(resolve, Math.max(8, 800 / (unscheduledBefore - targetBeforeCalc))));
+      // Progression AVANT le calcul - Animation fluide visible
+      const steps = Math.min(30, unscheduledBefore);
+      for (let i = 0; i <= steps; i++) {
+        setReplacementProgress({ 
+          current: Math.floor((i / steps) * unscheduledBefore * 0.4), 
+          total: unscheduledBefore 
+        });
+        // Utiliser requestIdleCallback ou setTimeout pour vraiment rendre la main
+        await new Promise((resolve) => {
+          if ('requestIdleCallback' in window) {
+            requestIdleCallback(() => setTimeout(resolve, 0));
+          } else {
+            setTimeout(resolve, 30);
+          }
+        });
       }
       
-      // Garder la barre à 100% visible pendant 400ms
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      // Marquer à 40% avant le calcul
+      setReplacementProgress({ current: Math.floor(unscheduledBefore * 0.4), total: unscheduledBefore });
+      
+      // Laisser le navigateur respirer avant le calcul
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      
+      console.log("[Replacement] Calcul en cours...");
+      const result = completerPlanningAvecSessionsNonPlanifiees(planningData, gridEffectif);
+      
+      const calcDuration = Date.now() - startTime;
+      console.log(`[Replacement] Terminé en ${calcDuration}ms`);
+      
+      // Progression APRÈS le calcul - Animation rapide à 100%
+      const finalSteps = 15;
+      for (let i = 0; i <= finalSteps; i++) {
+        const progress = Math.floor(unscheduledBefore * 0.4 + ((i / finalSteps) * unscheduledBefore * 0.6));
+        setReplacementProgress({ current: Math.min(progress, unscheduledBefore), total: unscheduledBefore });
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      
+      setReplacementProgress({ current: unscheduledBefore, total: unscheduledBefore });
+      await new Promise((resolve) => setTimeout(resolve, 300));
 
       const unscheduledAfter = result.sessions.filter(
         (s) => s.statut === "unscheduled"
@@ -503,7 +518,7 @@ function PlanningBuilderBody({
         nouvellementPlacees,
       });
     } catch (error) {
-      console.error("[Replacement] Erreur lors du re-placement:", error);
+      console.error("[Replacement] Erreur:", error);
       setReplacementResult({
         avant: unscheduledBefore,
         apres: unscheduledBefore,

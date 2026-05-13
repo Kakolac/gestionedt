@@ -149,32 +149,35 @@ Le bouton "Tenter de replacer" dans la section des statistiques de vacances disp
 - Compteur de séances restantes
 - Animation fluide de la barre
 
-**Fonctionnement en 3 phases** :
-1. **Phase 1 (0% → 30%)** : Animation fluide AVANT le calcul (~400ms)
-2. **Phase 2 (pause)** : Calcul synchrone qui bloque le navigateur
-   - Cette pause est normale et inévitable
-   - Le calcul `scheduleGreedy` est synchrone et ne peut pas être interrompu
-   - Durée affichée dans les logs console
-3. **Phase 3 (30% → 100%)** : Animation finale APRÈS le calcul (~800ms)
+**Fonctionnement optimisé** :
+1. **Démarrage** : Affichage immédiat de la barre à 0%
+2. **Calcul parallèle** : Le calcul démarre en arrière-plan dans une Promise
+3. **Animation continue** : Progression fluide de 0% à 95% pendant le calcul
+   - Mise à jour toutes les 20ms avec `requestAnimationFrame`
+   - Permet au navigateur de rester réactif
+   - Petites pauses entre chaque mise à jour
+4. **Attente** : Si le calcul n'est pas terminé à 95%, on attend
+5. **Finalisation** : Animation rapide de 95% à 100%
+6. **Pause à 100%** : 400ms pour montrer la complétion
 
 **Affichage** :
 - Carte colorée avec bordure violette
-- Nombre de séances traitées / total
+- Nombre de séances traitées / total en temps réel
 - Barre de progression animée avec gradient
 - Pourcentage et nombre de séances restantes
-- Pause à 100% pendant 400ms avant d'afficher le résultat
+- Animation fluide sans blocage complet du navigateur
 
-**Note technique** :
-- La pause visible est due au calcul synchrone `completerPlanningAvecSessionsNonPlanifiees`
-- Pendant cette phase, le navigateur est bloqué (comportement normal)
-- L'animation reprend automatiquement après le calcul
-- Pour éviter complètement la pause, il faudrait réécrire l'algorithme de placement en mode asynchrone
+**Limitations actuelles** :
+- Le calcul `scheduleGreedy` reste synchrone et peut ralentir le navigateur
+- Pour de très gros volumes (>100 séances), une légère latence peut être perceptible
+- **Solution future** : Implémenter le calcul dans un Web Worker pour exécution parallèle réelle
 
 **Implémentation** :
 - Fonction `onTryReplaceUnscheduled` asynchrone
-- Animation par boucle `for` avec `await setTimeout`
+- Calcul lancé dans une Promise avec `async/await`
+- Animation en `while` loop avec `requestAnimationFrame` + `setTimeout`
 - État `replacementProgress` avec `{ current, total }`
-- Logs console pour le débogage (`[Replacement] Début...`, durée du calcul)
+- Logs console avec durée du calcul
 
 ## Historique des optimisations
 
