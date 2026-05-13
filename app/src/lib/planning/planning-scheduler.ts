@@ -982,9 +982,11 @@ function repliquerGabaritPourPlage(
   Wp: number,
   weekGlobal: number,
   groupeIndex: number,
-  outerPeriodIndex: number
+  outerPeriodIndex: number,
+  demandById: Map<string, PlanningDemand>
 ): PlanningSession[] {
   const out: PlanningSession[] = [];
+  
   for (const s of periodResult.sessions) {
     if (s.statut !== "scheduled" || s.assignedSlot == null) {
       if (outerPeriodIndex === 0) {
@@ -992,10 +994,18 @@ function repliquerGabaritPourPlage(
       }
       continue;
     }
+    
+    const demand = demandById.get(s.demandId);
+    const maxSemaines = demand?.maxSemainesReplication ?? Infinity;
+    
     const baseSlot = s.assignedSlot;
     for (let k = 0; k < Wp; k += 1) {
       const sem = weekGlobal + k;
       if (sem < templateWeek) continue;
+      
+      // Limiter la réplication au nombre maximal de semaines
+      if (sem > maxSemaines) continue;
+      
       out.push({
         ...s,
         id: `${s.id}_G${groupeIndex}_P${outerPeriodIndex}_S${sem}`,
@@ -1046,6 +1056,12 @@ function placerEtRepliquerGabaritGroupe(
 
   let weekGlobal = 1;
   const replicated: PlanningSession[] = [];
+  
+  // Créer la Map une seule fois pour optimiser les performances
+  const demandById = new Map(
+    weeklyData.demands.map((d) => [d.id, d])
+  );
+  
   for (let p = 0; p < P; p += 1) {
     const Wp = blockSizes[p]!;
     const periodResult = periodResults[p]!;
@@ -1056,7 +1072,8 @@ function placerEtRepliquerGabaritGroupe(
         Wp,
         weekGlobal,
         groupeIndex,
-        p
+        p,
+        demandById
       )
     );
     weekGlobal += Wp;
@@ -1508,20 +1525,30 @@ function splitNwIntoNearlyEqualParts(nw: number, parts: number): number[] {
  */
 export type ScheduleGreedyRepetitionOptions = {
   nombrePeriodes?: number;
+  /**
+   * Callback de progression appelé pendant la génération du planning.
+   * Retourne une Promise pour permettre les re-renders React entre les étapes.
+   * @param progress - Valeur entre 0 et 1 (0% à 100%)
+   * @param message - Message descriptif de l'étape en cours
+   */
+  onProgress?: (progress: number, message: string) => Promise<void>;
 };
 
-export function scheduleGreedyRepetitionMode(
+export async function scheduleGreedyRepetitionMode(
   data: PlanningData,
   grid: PlanningGridConfig = DEFAULT_PLANNING_GRID,
   options?: ScheduleGreedyRepetitionOptions
-): PlanningData {
+): Promise<PlanningData> {
   const nw = nombreSemainesGrid(grid);
   const P = Math.max(1, Math.min(12, Math.floor(options?.nombrePeriodes ?? 1) || 1));
   const maxBloc: 2 | 4 = grid.maxSeanceHeures === 4 ? 4 : 2;
+  const onProgress = options?.onProgress;
 
   if (nw <= 1) {
     return scheduleGreedy(data, grid);
   }
+
+  await onProgress?.(0, "Initialisation du planning...");
 
   const placementGrid: PlanningGridConfig = { ...grid, nombreSemaines: nw };
 
@@ -1531,11 +1558,19 @@ export function scheduleGreedyRepetitionMode(
   const expanded: PlanningSession[] = [];
   let cumulativeSeed: PlanningSession[] = [];
 
-  for (let gi = 0; gi < sortedGroups.length; gi += 1) {
+  const totalGroups = sortedGroups.length;
+  for (let gi = 0; gi < totalGroups; gi += 1) {
     const [templateWeek, demandsGroupe] = sortedGroups[gi]!;
     const ids = new Set(demandsGroupe.map((d) => d.id));
     const weeklyData = buildWeeklyTemplateForGroup(data, ids, nw, maxBloc);
     if (weeklyData.sessions.length === 0) continue;
+
+    // Progression : 10% à 80% pour le placement des groupes
+    const groupProgress = 0.1 + (gi / totalGroups) * 0.7;
+    await onProgress?.(
+      groupProgress,
+      `Placement du groupe ${gi + 1}/${totalGroups} (${demandsGroupe.length} formation(s))...`
+    );
 
     const { replicated, cumulativeSlice } = placerEtRepliquerGabaritGroupe(
       weeklyData,
@@ -1553,16 +1588,22 @@ export function scheduleGreedyRepetitionMode(
   const demandByIdFinal = new Map(
     data.demands.map((d) => [d.id, d] as const)
   );
+  
+  await onProgress?.(0.85, "Nettoyage des dates de démarrage...");
   let sessionsSorties = sessionsSansCreneauxAvantDemarrage(
     placementGrid,
     expanded,
     demandByIdFinal
   );
+  
+  await onProgress?.(0.95, "Application des contraintes de vacances...");
   sessionsSorties = sessionsSansCreneauxVacances(
     placementGrid,
     sessionsSorties,
     demandByIdFinal
   );
+  
+  await onProgress?.(1, "Planning terminé !");
   return {
     ...data,
     sessions: sessionsSorties,

@@ -135,6 +135,12 @@ export type PlanningDemand = {
   dateDemarrageIso?: string;
   /** Périodes de vacances de la formation (bloque le placement pendant ces périodes). */
   formationDatesVacances: Array<{ debut: string; fin: string; nom: string }>;
+  /**
+   * En mode répétition : nombre maximal de semaines sur lesquelles répliquer
+   * le gabarit pour ne pas dépasser nombreHeuresPrevues (du contrat formation original).
+   * Calculé dans buildWeeklyTemplatePlanningData.
+   */
+  maxSemainesReplication?: number;
 };
 
 /** Créneau assigné : semaine 1-based × jour ISO × intervalle d’heures entières [heureDebut, heureFin) (fin exclusive). */

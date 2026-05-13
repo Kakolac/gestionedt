@@ -208,20 +208,72 @@ function PlanningBuilderBody({
     [rawData]
   );
 
-  const basePlanningData = useMemo(() => {
-    const normalized = normalizePlanningExport(rawData, gridEffectif);
-    const hasFormations = exportRawHasFormations(rawData);
-    const anchorOk =
-      parseSemaine1LundiIso(gridEffectif.semaine1LundiIso) != null;
-    if (hasFormations && !anchorOk) {
-      return normalized;
+  const [progressInfo, setProgressInfo] = useState<{
+    progress: number;
+    message: string;
+  } | null>(null);
+
+  const [basePlanningData, setBasePlanningData] = useState<PlanningData | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function computePlanning() {
+      const normalized = normalizePlanningExport(rawData, gridEffectif);
+      const hasFormations = exportRawHasFormations(rawData);
+      const anchorOk =
+        parseSemaine1LundiIso(gridEffectif.semaine1LundiIso) != null;
+      
+      if (hasFormations && !anchorOk) {
+        if (!cancelled) {
+          setProgressInfo(null);
+          setBasePlanningData(normalized);
+        }
+        return;
+      }
+
+      if (modeRepetition) {
+        if (!cancelled) {
+          setProgressInfo({ progress: 0, message: "Démarrage..." });
+        }
+        
+        const result = await scheduleGreedyRepetitionMode(normalized, gridEffectif, {
+          nombrePeriodes: repetitionNombrePeriodes,
+          onProgress: async (progress, message) => {
+            if (!cancelled) {
+              console.log(`[Planning Progress] ${Math.round(progress * 100)}% - ${message}`);
+              setProgressInfo({ progress, message });
+              // Attendre 2 frames d'animation pour garantir que le navigateur repeint
+              await new Promise((resolve) => {
+                requestAnimationFrame(() => {
+                  requestAnimationFrame(() => {
+                    setTimeout(resolve, 50);
+                  });
+                });
+              });
+            }
+          },
+        });
+        
+        if (!cancelled) {
+          setProgressInfo(null);
+          setBasePlanningData(result);
+        }
+        return;
+      }
+
+      const result = scheduleGreedy(normalized, gridEffectif);
+      if (!cancelled) {
+        setProgressInfo(null);
+        setBasePlanningData(result);
+      }
     }
-    if (modeRepetition) {
-      return scheduleGreedyRepetitionMode(normalized, gridEffectif, {
-        nombrePeriodes: repetitionNombrePeriodes,
-      });
-    }
-    return scheduleGreedy(normalized, gridEffectif);
+
+    computePlanning();
+
+    return () => {
+      cancelled = true;
+    };
   }, [rawData, gridEffectif, modeRepetition, repetitionNombrePeriodes]);
 
   const [manualSessions, setManualSessions] = useState<
@@ -256,6 +308,10 @@ function PlanningBuilderBody({
     issues: ReturnType<typeof collectProfessorConstraintIssuesAfterSwap>;
   } | null>(null);
   const [replacementLoading, setReplacementLoading] = useState(false);
+  const [replacementProgress, setReplacementProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
   const [replacementResult, setReplacementResult] = useState<{
     avant: number;
     apres: number;
@@ -263,18 +319,21 @@ function PlanningBuilderBody({
   } | null>(null);
 
   const planningData = useMemo(() => {
+    if (!basePlanningData) return null;
     if (manualSessions == null) return basePlanningData;
     return { ...basePlanningData, sessions: manualSessions };
   }, [basePlanningData, manualSessions]);
 
   const formationSelectOptions = useMemo(
     () =>
-      [...planningData.references.formations].sort((a, b) =>
-        (a.nom ?? a.id).localeCompare(b.nom ?? b.id, "fr", {
-          sensitivity: "base",
-        })
-      ),
-    [planningData.references.formations]
+      planningData
+        ? [...planningData.references.formations].sort((a, b) =>
+            (a.nom ?? a.id).localeCompare(b.nom ?? b.id, "fr", {
+              sensitivity: "base",
+            })
+          )
+        : [],
+    [planningData]
   );
 
   const highlightSessionIds = useMemo(() => {
@@ -285,7 +344,7 @@ function PlanningBuilderBody({
   }, [swapSelectionIds]);
 
   const selectionRecap = useMemo(() => {
-    if (swapSelectionIds == null || swapSelectionIds.length === 0) {
+    if (!planningData || swapSelectionIds == null || swapSelectionIds.length === 0) {
       return null;
     }
     const firstId = swapSelectionIds[0];
@@ -317,7 +376,7 @@ function PlanningBuilderBody({
 
   const onPickProfessorColorFromMenu = useCallback(() => {
     const ctx = contextMenu;
-    if (ctx == null) return;
+    if (ctx == null || !planningData) return;
     const label = professorDisplayLabel(planningData, ctx.block.professeurId);
     setProfColorPopover({
       professeurId: ctx.block.professeurId,
@@ -343,7 +402,7 @@ function PlanningBuilderBody({
   const onSwapWithSelection = useCallback(() => {
     const target = contextMenu?.block;
     const ids = swapSelectionIds;
-    if (!target || ids == null || ids.length === 0) {
+    if (!target || ids == null || ids.length === 0 || !planningData) {
       return;
     }
     const selectedSessions = planningData.sessions.filter((s) =>
@@ -388,44 +447,72 @@ function PlanningBuilderBody({
     setSwapConstraintPending(null);
   }, []);
 
-  const onTryReplaceUnscheduled = useCallback(() => {
+  const onTryReplaceUnscheduled = useCallback(async () => {
+    if (!planningData) return;
     const unscheduledBefore = planningData.sessions.filter(
       (s) => s.statut === "unscheduled"
     ).length;
-    
+
+    if (unscheduledBefore === 0) {
+      return;
+    }
+
     setReplacementLoading(true);
     setReplacementResult(null);
-    
-    setTimeout(() => {
-      try {
-        const result = completerPlanningAvecSessionsNonPlanifiees(
-          planningData,
-          gridEffectif
-        );
-        
-        const unscheduledAfter = result.sessions.filter(
-          (s) => s.statut === "unscheduled"
-        ).length;
-        
-        const nouvellementPlacees = unscheduledBefore - unscheduledAfter;
-        
-        setManualSessions(result.sessions);
-        setReplacementResult({
-          avant: unscheduledBefore,
-          apres: unscheduledAfter,
-          nouvellementPlacees,
-        });
-      } catch (error) {
-        console.error("Erreur lors du re-placement:", error);
-        setReplacementResult({
-          avant: unscheduledBefore,
-          apres: unscheduledBefore,
-          nouvellementPlacees: 0,
-        });
-      } finally {
-        setReplacementLoading(false);
+    setReplacementProgress({ current: 0, total: unscheduledBefore });
+
+    // Phase 1 : Animation initiale jusqu'à 30% AVANT le calcul
+    const targetBeforeCalc = Math.floor(unscheduledBefore * 0.30);
+    for (let i = 0; i <= targetBeforeCalc; i++) {
+      setReplacementProgress({ current: i, total: unscheduledBefore });
+      await new Promise((resolve) => setTimeout(resolve, Math.max(10, 400 / targetBeforeCalc)));
+    }
+
+    try {
+      console.log(`[Replacement] Début du replacement de ${unscheduledBefore} séances non planifiées...`);
+      const startTime = Date.now();
+      
+      // Phase 2 : Calcul (bloque le navigateur - c'est ici la pause)
+      const result = completerPlanningAvecSessionsNonPlanifiees(
+        planningData,
+        gridEffectif
+      );
+      
+      const calcDuration = Date.now() - startTime;
+      console.log(`[Replacement] Replacement terminé en ${calcDuration}ms !`);
+      
+      // Phase 3 : Animation de 30% à 100% APRÈS le calcul
+      for (let i = targetBeforeCalc + 1; i <= unscheduledBefore; i++) {
+        setReplacementProgress({ current: i, total: unscheduledBefore });
+        await new Promise((resolve) => setTimeout(resolve, Math.max(8, 800 / (unscheduledBefore - targetBeforeCalc))));
       }
-    }, 100);
+      
+      // Garder la barre à 100% visible pendant 400ms
+      await new Promise((resolve) => setTimeout(resolve, 400));
+
+      const unscheduledAfter = result.sessions.filter(
+        (s) => s.statut === "unscheduled"
+      ).length;
+
+      const nouvellementPlacees = unscheduledBefore - unscheduledAfter;
+        
+      setManualSessions(result.sessions);
+      setReplacementResult({
+        avant: unscheduledBefore,
+        apres: unscheduledAfter,
+        nouvellementPlacees,
+      });
+    } catch (error) {
+      console.error("[Replacement] Erreur lors du re-placement:", error);
+      setReplacementResult({
+        avant: unscheduledBefore,
+        apres: unscheduledBefore,
+        nouvellementPlacees: 0,
+      });
+    } finally {
+      setReplacementLoading(false);
+      setReplacementProgress(null);
+    }
   }, [planningData, gridEffectif]);
 
   const hasSwapSelection =
@@ -437,13 +524,13 @@ function PlanningBuilderBody({
     !blocksSameSessionSet(swapSelectionIds, contextMenu.block);
 
   const scheduled = useMemo(
-    () => planningData.sessions.filter((s) => s.statut === "scheduled"),
-    [planningData.sessions]
+    () => (planningData ? planningData.sessions.filter((s) => s.statut === "scheduled") : []),
+    [planningData]
   );
 
   const unscheduled = useMemo(
-    () => planningData.sessions.filter((s) => s.statut === "unscheduled"),
-    [planningData.sessions]
+    () => (planningData ? planningData.sessions.filter((s) => s.statut === "unscheduled") : []),
+    [planningData]
   );
 
   /** Le JSON peut être volumineux : on ne le sérialise que lorsque le panneau est ouvert. */
@@ -457,7 +544,7 @@ function PlanningBuilderBody({
   const formationFiltreTrim = formationAfficheeIdFilter.trim();
 
   const swapTargetSessionIds = useMemo(() => {
-    if (swapSelectionIds == null || swapSelectionIds.length === 0) {
+    if (!planningData || swapSelectionIds == null || swapSelectionIds.length === 0) {
       return undefined;
     }
     const pick = new Set(swapSelectionIds);
@@ -515,7 +602,7 @@ function PlanningBuilderBody({
   }, []);
 
   useEffect(() => {
-    if (formationFiltreTrim === "") return;
+    if (!planningData || formationFiltreTrim === "") return;
     if (swapSelectionIds == null || swapSelectionIds.length === 0) return;
     for (const id of swapSelectionIds) {
       const s = planningData.sessions.find((x) => x.id === id);
@@ -525,7 +612,7 @@ function PlanningBuilderBody({
         return;
       }
     }
-  }, [formationFiltreTrim, swapSelectionIds, planningData.sessions]);
+  }, [formationFiltreTrim, swapSelectionIds, planningData]);
 
   const toggleFullscreen = useCallback(async () => {
     setFullscreenError(null);
@@ -568,6 +655,20 @@ function PlanningBuilderBody({
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isFullscreen, horizonNs, goToPreviousWeek, goToNextWeek]);
+
+  // Afficher un message de chargement si le planning n'est pas encore calculé
+  if (!planningData) {
+    return (
+      <div className="flex min-h-[50vh] w-full items-center justify-center">
+        <div className="text-center">
+          <div className="mb-4 h-12 w-12 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600 mx-auto" />
+          <p className="text-lg font-medium text-slate-700">
+            Chargement du planning...
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -624,6 +725,43 @@ function PlanningBuilderBody({
         ) : null}
       </header>
       ) : null}
+
+      {progressInfo && (
+        <div className="animate-pulse rounded-2xl border-2 border-indigo-400 bg-gradient-to-br from-indigo-50 to-purple-50 px-[min(4vw,1.5rem)] py-[min(2.5vh,1.25rem)] shadow-lg">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex-1">
+              <div className="flex items-center gap-3">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-200 border-t-indigo-600" />
+                <div>
+                  <p className="text-[clamp(1rem,1.4vw,1.15rem)] font-bold text-indigo-950">
+                    Génération du planning en cours...
+                  </p>
+                  <p className="mt-1 text-[clamp(0.85rem,1.15vw,0.95rem)] font-medium text-indigo-800">
+                    {progressInfo.message}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-col items-center">
+              <div className="text-[clamp(1.5rem,2.2vw,2rem)] font-extrabold text-indigo-700">
+                {Math.round(progressInfo.progress * 100)}%
+              </div>
+              <div className="text-[clamp(0.7rem,0.9vw,0.8rem)] font-medium text-indigo-600">
+                progression
+              </div>
+            </div>
+          </div>
+          <div className="mt-[1.5vh] h-[1.2vh] overflow-hidden rounded-full bg-indigo-200/80 shadow-inner">
+            <div
+              className="h-full bg-gradient-to-r from-indigo-500 via-purple-600 to-pink-600 transition-all duration-500 ease-out shadow-md"
+              style={{ width: `${progressInfo.progress * 100}%` }}
+            />
+          </div>
+          <p className="mt-2 text-center text-[clamp(0.75rem,1vw,0.85rem)] text-indigo-700">
+            Veuillez patienter, le calcul peut prendre quelques secondes...
+          </p>
+        </div>
+      )}
 
       <section
         className={
@@ -989,6 +1127,7 @@ function PlanningBuilderBody({
             grid={gridEffectif}
             onTryReplacement={onTryReplaceUnscheduled}
             replacementLoading={replacementLoading}
+            replacementProgress={replacementProgress}
             replacementResult={replacementResult}
           />
         </>

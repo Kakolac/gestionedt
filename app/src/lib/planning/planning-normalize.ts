@@ -123,7 +123,19 @@ export function buildWeeklyTemplatePlanningData(
   const demands: PlanningDemand[] = data.demands.map((d) => {
     const hWeek = Math.max(0, Math.round(d.nombreHeuresPrevues / nw));
     const seances = splitHoursIntoSeancePaquets(hWeek, maxBlocHeures);
-    return { ...d, nombreHeuresPrevues: hWeek, seances };
+    
+    // Calculer le nombre maximal de semaines pour ne pas dépasser les heures prévues d'origine
+    const heuresParGabarit = seances.reduce((acc, p) => acc + p.duree * p.quantite, 0);
+    const maxSemainesReplication = heuresParGabarit > 0
+      ? Math.floor(d.nombreHeuresPrevues / heuresParGabarit)
+      : nw;
+    
+    return {
+      ...d,
+      nombreHeuresPrevues: hWeek,
+      seances,
+      maxSemainesReplication,
+    };
   });
   const sessions: PlanningSession[] = [];
   let sessionSeq = 0;
