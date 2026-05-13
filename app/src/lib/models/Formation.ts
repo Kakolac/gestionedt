@@ -38,6 +38,38 @@ const FormationLigneSchema = new Schema(
   { _id: false }
 );
 
+const FormationVacancePeriodeSchema = new Schema(
+  {
+    debut: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 10,
+      validate: {
+        validator: (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v),
+        message: "Format de date invalide (attendu: YYYY-MM-DD)",
+      },
+    },
+    fin: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 10,
+      validate: {
+        validator: (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v),
+        message: "Format de date invalide (attendu: YYYY-MM-DD)",
+      },
+    },
+    nom: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 100,
+    },
+  },
+  { _id: false }
+);
+
 /**
  * Formation : nom, description du bloc ; **lignes** (chaque ligne = une
  * matière + les professeurs associés + **heures prévues** pour cette matière dans le
@@ -93,6 +125,20 @@ const FormationSchema = new Schema(
       trim: true,
       maxlength: 10,
       default: "",
+    },
+    /**
+     * Périodes de vacances pour cette formation (aucun cours ne sera planifié pendant ces périodes).
+     * Optionnel ; peut être défini/modifié via l'administration.
+     */
+    datesVacances: {
+      type: [FormationVacancePeriodeSchema],
+      default: [],
+      validate: {
+        validator: function (periodes: Array<{ debut: string; fin: string; nom: string }>) {
+          return periodes.every((p) => p.debut <= p.fin);
+        },
+        message: "La date de fin doit être postérieure ou égale à la date de début pour chaque période",
+      },
     },
   },
   { timestamps: true }

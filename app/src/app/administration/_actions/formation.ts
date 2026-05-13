@@ -249,6 +249,87 @@ function parseFormationDateDemarrageFromForm(formData: FormData):
   return { ok: true, dateDemarrageIso: iso };
 }
 
+type VacancePeriode = {
+  debut: string;
+  fin: string;
+  nom: string;
+};
+
+function parseDatesVacancesJsonFromForm(formData: FormData):
+  | FormationActionState
+  | { ok: true; periodes: VacancePeriode[] } {
+  const raw = formData.get("datesVacancesJson");
+  if (typeof raw !== "string") {
+    return { ok: true, periodes: [] };
+  }
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed === "[]") {
+    return { ok: true, periodes: [] };
+  }
+  if (trimmed.length > MAX_JSON_CHARS) {
+    return { ok: false, error: "Données de vacances trop volumineuses." };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return { ok: false, error: "Format JSON des dates de vacances invalide." };
+  }
+
+  if (!Array.isArray(parsed)) {
+    return { ok: false, error: "Les dates de vacances doivent être un tableau." };
+  }
+
+  const periodes: VacancePeriode[] = [];
+  for (let i = 0; i < parsed.length; i++) {
+    const item = parsed[i];
+    if (typeof item !== "object" || item == null) {
+      return { ok: false, error: `Période de vacances ${i + 1} : objet attendu.` };
+    }
+    const o = item as Record<string, unknown>;
+    const debut = typeof o.debut === "string" ? o.debut.trim() : "";
+    const fin = typeof o.fin === "string" ? o.fin.trim() : "";
+    const nom = typeof o.nom === "string" ? o.nom.trim() : "";
+
+    if (!debut || !fin || !nom) {
+      return {
+        ok: false,
+        error: `Période de vacances ${i + 1} : debut, fin et nom sont requis.`,
+      };
+    }
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(debut)) {
+      return {
+        ok: false,
+        error: `Période de vacances ${i + 1} : date de début invalide (format AAAA-MM-JJ).`,
+      };
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fin)) {
+      return {
+        ok: false,
+        error: `Période de vacances ${i + 1} : date de fin invalide (format AAAA-MM-JJ).`,
+      };
+    }
+    if (debut > fin) {
+      return {
+        ok: false,
+        error: `Période de vacances ${i + 1} : la date de fin doit être postérieure ou égale à la date de début.`,
+      };
+    }
+    if (nom.length > 100) {
+      return {
+        ok: false,
+        error: `Période de vacances ${i + 1} : nom trop long (100 caractères max).`,
+      };
+    }
+
+    periodes.push({ debut, fin, nom });
+  }
+
+  return { ok: true, periodes };
+}
+
 type LigneParsée =
   | {
       kind: "existing";
@@ -529,6 +610,9 @@ export async function updateFormationAction(
   const dateParsed = parseFormationDateDemarrageFromForm(formData);
   if (!("dateDemarrageIso" in dateParsed)) return dateParsed;
 
+  const vacancesParsed = parseDatesVacancesJsonFromForm(formData);
+  if (!("periodes" in vacancesParsed)) return vacancesParsed;
+
   const idRaw = formData.get("formationId");
   if (
     typeof idRaw !== "string" ||
@@ -569,6 +653,7 @@ export async function updateFormationAction(
   doc.localisationPays = locParsed.localisationPays;
   doc.localisationRegion = locParsed.localisationRegion;
   doc.dateDemarrageIso = dateParsed.dateDemarrageIso;
+  doc.datesVacances = vacancesParsed.periodes;
 
   try {
     await doc.save();

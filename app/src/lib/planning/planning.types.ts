@@ -74,6 +74,8 @@ export type FormationReference = {
   localisationRegion?: string;
   /** Date de démarrage civile `YYYY-MM-DD` (planning : lundi S1 = lundi de la même semaine lun–dim). */
   dateDemarrageIso?: string;
+  /** Périodes de vacances de la formation (aucun cours ne sera planifié pendant ces périodes). */
+  datesVacances?: Array<{ debut: string; fin: string; nom: string }>;
 };
 
 export type MatiereReference = {
@@ -131,6 +133,8 @@ export type PlanningDemand = {
   localisationRegion?: string;
   /** Date de démarrage civile `YYYY-MM-DD` — aucun cours placé avant ce jour (scheduler). */
   dateDemarrageIso?: string;
+  /** Périodes de vacances de la formation (bloque le placement pendant ces périodes). */
+  formationDatesVacances: Array<{ debut: string; fin: string; nom: string }>;
 };
 
 /** Créneau assigné : semaine 1-based × jour ISO × intervalle d’heures entières [heureDebut, heureFin) (fin exclusive). */

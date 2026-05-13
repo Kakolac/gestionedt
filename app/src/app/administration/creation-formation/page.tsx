@@ -275,6 +275,19 @@ export default async function CreationFormationPage() {
       const dateDemarrageIso =
         typeof ddRaw === "string" ? ddRaw.trim().slice(0, 10) : "";
 
+      const datesVacancesRaw = (f as { datesVacances?: unknown }).datesVacances;
+      let datesVacances: Array<{ debut: string; fin: string; nom: string }> = [];
+      if (Array.isArray(datesVacancesRaw)) {
+        datesVacances = datesVacancesRaw
+          .filter((p): p is Record<string, unknown> => typeof p === "object" && p !== null)
+          .map((p) => ({
+            debut: typeof p.debut === "string" ? p.debut.trim() : "",
+            fin: typeof p.fin === "string" ? p.fin.trim() : "",
+            nom: typeof p.nom === "string" ? p.nom.trim() : "",
+          }))
+          .filter((p) => p.debut && p.fin && p.nom);
+      }
+
       return {
         id: String((fRaw as { _id: unknown })._id ?? ""),
         nom,
@@ -291,6 +304,7 @@ export default async function CreationFormationPage() {
         localisationPays,
         localisationRegion,
         dateDemarrageIso,
+        datesVacances,
       };
     });
 

@@ -5,6 +5,7 @@ import { useState } from "react";
 import {
   CreerFormationModal,
   type MatiereOptionCourte,
+  type DraftLigne,
 } from "@/components/administration/CreerFormationModal";
 import type { FormationRow } from "@/components/administration/ModifierFormationModal";
 import { ModifierFormationModal } from "@/components/administration/ModifierFormationModal";
@@ -20,6 +21,17 @@ type Props = {
   professeurOptions: ProfesseurOption[];
 };
 
+function rowVersDraftsForDuplicate(row: FormationRow): DraftLigne[] {
+  return row.lignesListe.map((ligne, idx) => ({
+    clientKey: `duplicate-${row.id}-${idx}-${ligne.matiereId}`,
+    kind: "existing" as const,
+    matiereId: ligne.matiereId,
+    matiereNom: ligne.matiereNom,
+    professeurIds: [...ligne.professeurIds],
+    nombreHeuresPrevues: ligne.nombreHeuresPrevues,
+  }));
+}
+
 export function GestionFormationPanel({
   rows,
   matiereDisponiblesPourCreation,
@@ -29,6 +41,8 @@ export function GestionFormationPanel({
   const router = useRouter();
   const [createKey, setCreateKey] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
+  const [duplicateRow, setDuplicateRow] = useState<FormationRow | null>(null);
+  const [duplicateKey, setDuplicateKey] = useState(0);
   const [editRow, setEditRow] = useState<FormationRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{
     id: string;
@@ -155,6 +169,16 @@ export function GestionFormationPanel({
                       </button>
                       <button
                         type="button"
+                        className="rounded-lg border border-emerald-200 px-2 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50"
+                        onClick={() => {
+                          setDuplicateKey((k) => k + 1);
+                          setDuplicateRow(row);
+                        }}
+                      >
+                        Dupliquer
+                      </button>
+                      <button
+                        type="button"
                         className="rounded-lg border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
                         onClick={() =>
                           setDeleteTarget({
@@ -185,6 +209,27 @@ export function GestionFormationPanel({
         }}
         matiereDisponibles={matiereDisponiblesPourCreation}
         professeurOptions={professeurOptions}
+      />
+
+      <CreerFormationModal
+        key={`duplicate-${duplicateKey}`}
+        open={duplicateRow !== null}
+        onClose={() => setDuplicateRow(null)}
+        onSuccess={() => {
+          setDuplicateKey((k) => k + 1);
+          setDuplicateRow(null);
+          router.refresh();
+        }}
+        matiereDisponibles={toutesLesMatieres}
+        professeurOptions={professeurOptions}
+        initialNom={duplicateRow ? `Copie de ${duplicateRow.nom}` : undefined}
+        initialDescription={duplicateRow?.description}
+        initialLignes={duplicateRow ? rowVersDraftsForDuplicate(duplicateRow) : undefined}
+        initialContraintes={duplicateRow?.contraintes}
+        initialLocalisationPays={duplicateRow?.localisationPays}
+        initialLocalisationRegion={duplicateRow?.localisationRegion}
+        initialDateDemarrage={duplicateRow?.dateDemarrageIso}
+        initialDatesVacances={duplicateRow?.datesVacances}
       />
 
       <ModifierFormationModal

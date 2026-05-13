@@ -16,6 +16,7 @@ import {
 } from "@/components/planning/planning-grid";
 import { PlanningManualSwapConstraintConfirmModal } from "@/components/planning/PlanningManualSwapConstraintConfirmModal";
 import { PlanningComparisonStats } from "@/components/planning/PlanningComparisonStats";
+import { PlanningVacancesStats } from "@/components/planning/PlanningVacancesStats";
 import { PlanningProfessorColorPickPopover } from "@/components/planning/PlanningProfessorColorPickPopover";
 import { listMergedBlocksForGridView } from "@/lib/planning/planning-grid-view-blocks";
 import { normalizePlanningExport } from "@/lib/planning/planning-normalize";
@@ -39,6 +40,7 @@ import {
   DEFAULT_PLANNING_GRID,
   scheduleGreedy,
   scheduleGreedyRepetitionMode,
+  completerPlanningAvecSessionsNonPlanifiees,
 } from "@/lib/planning/planning-scheduler";
 import type {
   PlanningData,
@@ -253,6 +255,12 @@ function PlanningBuilderBody({
     sessions: PlanningSession[];
     issues: ReturnType<typeof collectProfessorConstraintIssuesAfterSwap>;
   } | null>(null);
+  const [replacementLoading, setReplacementLoading] = useState(false);
+  const [replacementResult, setReplacementResult] = useState<{
+    avant: number;
+    apres: number;
+    nouvellementPlacees: number;
+  } | null>(null);
 
   const planningData = useMemo(() => {
     if (manualSessions == null) return basePlanningData;
@@ -379,6 +387,46 @@ function PlanningBuilderBody({
   const onCancelSwapConstraintModal = useCallback(() => {
     setSwapConstraintPending(null);
   }, []);
+
+  const onTryReplaceUnscheduled = useCallback(() => {
+    const unscheduledBefore = planningData.sessions.filter(
+      (s) => s.statut === "unscheduled"
+    ).length;
+    
+    setReplacementLoading(true);
+    setReplacementResult(null);
+    
+    setTimeout(() => {
+      try {
+        const result = completerPlanningAvecSessionsNonPlanifiees(
+          planningData,
+          gridEffectif
+        );
+        
+        const unscheduledAfter = result.sessions.filter(
+          (s) => s.statut === "unscheduled"
+        ).length;
+        
+        const nouvellementPlacees = unscheduledBefore - unscheduledAfter;
+        
+        setManualSessions(result.sessions);
+        setReplacementResult({
+          avant: unscheduledBefore,
+          apres: unscheduledAfter,
+          nouvellementPlacees,
+        });
+      } catch (error) {
+        console.error("Erreur lors du re-placement:", error);
+        setReplacementResult({
+          avant: unscheduledBefore,
+          apres: unscheduledBefore,
+          nouvellementPlacees: 0,
+        });
+      } finally {
+        setReplacementLoading(false);
+      }
+    }, 100);
+  }, [planningData, gridEffectif]);
 
   const hasSwapSelection =
     swapSelectionIds != null && swapSelectionIds.length > 0;
@@ -934,7 +982,16 @@ function PlanningBuilderBody({
       ) : null}
 
       {!isFullscreen ? (
-        <PlanningComparisonStats planningData={planningData} />
+        <>
+          <PlanningComparisonStats planningData={planningData} />
+          <PlanningVacancesStats
+            planningData={planningData}
+            grid={gridEffectif}
+            onTryReplacement={onTryReplaceUnscheduled}
+            replacementLoading={replacementLoading}
+            replacementResult={replacementResult}
+          />
+        </>
       ) : null}
     </div>
   );

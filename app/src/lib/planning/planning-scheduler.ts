@@ -510,6 +510,21 @@ export function sessionPlacementBlocker(
     }
   }
 
+  if (demand.formationDatesVacances && demand.formationDatesVacances.length > 0) {
+    if (!parseSemaine1LundiIso(grid.semaine1LundiIso)) {
+      return "Calendrier incomplet : indiquez le lundi de la semaine 1 pour appliquer les périodes de vacances.";
+    }
+    const slotDay = isoDateCivilPourSlot(grid, slot);
+    if (!slotDay) {
+      return "Impossible de déterminer la date civile du créneau (périodes de vacances).";
+    }
+    for (const periode of demand.formationDatesVacances) {
+      if (slotDay >= periode.debut && slotDay <= periode.fin) {
+        return `Période de vacances (${periode.nom}) — cours non autorisé pendant cette période.`;
+      }
+    }
+  }
+
   const joursOk = joursAutorisesJoursTravail(demand.contraintesProfesseur);
   if (joursOk !== null && joursOk.size > 0 && !joursOk.has(slot.jour)) {
     return "Jour non autorisé par la contrainte « jours de travail ».";
@@ -1076,6 +1091,167 @@ function sessionsSansCreneauxAvantDemarrage(
   });
 }
 
+/**
+ * Marque comme `unscheduled` les séances placées pendant les périodes de vacances
+ * de leur formation. Efface créneau et salle.
+ * Sans calendrier (`semaine1LundiIso` invalide), aucune modification (symétrique au blocage placement).
+ */
+function sessionsSansCreneauxVacances(
+  grid: PlanningGridConfig,
+  sessions: readonly PlanningSession[],
+  demandById: Map<string, PlanningDemand>
+): PlanningSession[] {
+  const lundiOk = parseSemaine1LundiIso(grid.semaine1LundiIso ?? "");
+  if (!lundiOk) return [...sessions];
+  return sessions.map((s) => {
+    if (s.statut !== "scheduled" || s.assignedSlot == null) return s;
+    const demand = demandById.get(s.demandId);
+    const periodes = demand?.formationDatesVacances;
+    if (!periodes || periodes.length === 0) return s;
+    const slotDay = isoDateCivilPourSlot(grid, s.assignedSlot);
+    if (!slotDay) return s;
+    for (const periode of periodes) {
+      if (slotDay >= periode.debut && slotDay <= periode.fin) {
+        return {
+          ...s,
+          statut: "unscheduled" as const,
+          assignedSlot: undefined,
+          assignedSalleId: undefined,
+        };
+      }
+    }
+    return s;
+  });
+}
+
+/**
+ * Place uniquement les sessions `unscheduled` en préservant toutes les sessions déjà `scheduled`.
+ * Utilise `seedPlaced` pour éviter les collisions avec les sessions déjà placées.
+ * 
+ * Gain de performance : si 10% des sessions sont `unscheduled`, seul ce sous-ensemble est traité
+ * au lieu de re-placer toutes les sessions (100%).
+ * 
+ * @param data Planning avec un mélange de sessions scheduled et unscheduled
+ * @param grid Configuration de la grille horaire
+ * @param options Options pour scheduleGreedy (runPostVacationRepair est forcé à false)
+ * @returns Planning avec tentative de placement des sessions unscheduled, sessions scheduled inchangées
+ */
+function placerSessionsNonPlanifieesCible(
+  data: PlanningData,
+  grid: PlanningGridConfig,
+  options?: ScheduleGreedyOptions
+): PlanningData {
+  const scheduled = data.sessions.filter((s) => s.statut === "scheduled");
+  const unscheduled = data.sessions.filter((s) => s.statut === "unscheduled");
+
+  if (unscheduled.length === 0) {
+    return data;
+  }
+
+  const subData: PlanningData = {
+    ...data,
+    sessions: unscheduled,
+  };
+
+  const result = scheduleGreedy(subData, grid, {
+    ...options,
+    seedPlaced: scheduled,
+    runPostVacationRepair: false,
+  });
+
+  const resultById = new Map(result.sessions.map((s) => [s.id, s] as const));
+  const mergedSessions = data.sessions.map((s) => {
+    const updated = resultById.get(s.id);
+    return updated ?? s;
+  });
+
+  return {
+    ...data,
+    sessions: mergedSessions,
+  };
+}
+
+/**
+ * Post-traitement : retire les séances placées avant la date de démarrage
+ * et pendant les périodes de vacances, puis relance un placement glouton si nécessaire.
+ *
+ * Le second passage utilise `placerSessionsNonPlanifieesCible` pour ne replacer que les
+ * sessions marquées `unscheduled`, préservant toutes les sessions `scheduled` (optimisation perf).
+ */
+export function repairPlanningVacancesEtDemarrage(
+  data: PlanningData,
+  grid: PlanningGridConfig,
+  options?: ScheduleGreedyOptions
+): PlanningData {
+  const demandById = new Map(data.demands.map((d) => [d.id, d] as const));
+  let cleaned = sessionsSansCreneauxAvantDemarrage(
+    grid,
+    data.sessions,
+    demandById
+  );
+  cleaned = sessionsSansCreneauxVacances(grid, cleaned, demandById);
+  if (countUnscheduledSessions(cleaned) === 0) {
+    return { ...data, sessions: cleaned };
+  }
+  const { runPostVacationRepair: _r, ...greedyOpts } = options ?? {};
+  return placerSessionsNonPlanifieesCible(
+    { ...data, sessions: cleaned },
+    grid,
+    greedyOpts
+  );
+}
+
+/**
+ * Alias : répare un planning déjà produit (retrait des créneaux invalides vacances / avant démarrage
+ * puis re-placement des séances concernées).
+ */
+export function repairPlanningAvecVacances(
+  data: PlanningData,
+  grid: PlanningGridConfig,
+  options?: ScheduleGreedyOptions
+): PlanningData {
+  return repairPlanningVacancesEtDemarrage(data, grid, options);
+}
+
+/**
+ * Place uniquement les sessions non planifiées (`unscheduled`) en préservant toutes les sessions
+ * déjà placées (`scheduled`). Utile après un nettoyage manuel ou pour compléter un planning incomplet.
+ * 
+ * Cette fonction est **beaucoup plus rapide** qu'un re-placement complet (via `scheduleGreedy` direct)
+ * car elle ne traite que les sessions non planifiées au lieu de toutes les sessions.
+ * 
+ * **Cas d'usage** :
+ * - Après avoir manuellement marqué certaines sessions comme `unscheduled`
+ * - Pour compléter un planning qui a beaucoup de sessions non planifiées dues aux contraintes
+ * - Après avoir modifié les contraintes et nettoyé le planning
+ * 
+ * **Garanties** :
+ * - Les sessions `scheduled` ne sont **jamais** déplacées
+ * - Les périodes de vacances sont respectées pour les nouveaux placements
+ * - Les contraintes professeur/formation/salle sont vérifiées
+ * 
+ * @param data Planning avec un mélange de sessions scheduled et unscheduled
+ * @param grid Configuration de la grille horaire
+ * @param options Options pour scheduleGreedy (runPostVacationRepair est forcé à false)
+ * @returns Planning avec tentative de placement des sessions unscheduled, sessions scheduled inchangées
+ * 
+ * @example
+ * ```typescript
+ * // Compléter un planning avec beaucoup de sessions non planifiées
+ * const planningComplete = completerPlanningAvecSessionsNonPlanifiees(
+ *   planningAvecUnscheduled,
+ *   gridConfig
+ * );
+ * ```
+ */
+export function completerPlanningAvecSessionsNonPlanifiees(
+  data: PlanningData,
+  grid: PlanningGridConfig,
+  options?: ScheduleGreedyOptions
+): PlanningData {
+  return placerSessionsNonPlanifieesCible(data, grid, options);
+}
+
 function greedyPlaceOrdered(
   data: PlanningData,
   grid: PlanningGridConfig,
@@ -1220,6 +1396,12 @@ export type ScheduleGreedyOptions = {
    * prof / formation / salle (mode répété multi-groupes).
    */
   seedPlaced?: readonly PlanningSession[];
+  /**
+   * Après le glouton, enchaîne avec {@link repairPlanningVacancesEtDemarrage}
+   * (nettoyage démarrage/vacances puis **second** passage glouton si besoin).
+   * Désactivé par défaut : coût élevé sur de grands horizons / beaucoup de séances.
+   */
+  runPostVacationRepair?: boolean;
 };
 
 export function scheduleGreedy(
@@ -1281,10 +1463,15 @@ export function scheduleGreedy(
     }
   }
 
-  return {
+  const placed = {
     ...data,
     sessions: best,
   };
+  if (options?.runPostVacationRepair) {
+    const { runPostVacationRepair: _r, ...repairOpts } = options;
+    return repairPlanningVacancesEtDemarrage(placed, grid, repairOpts);
+  }
+  return placed;
 }
 
 function splitNwIntoNearlyEqualParts(nw: number, parts: number): number[] {
@@ -1337,9 +1524,6 @@ export function scheduleGreedyRepetitionMode(
   }
 
   const placementGrid: PlanningGridConfig = { ...grid, nombreSemaines: nw };
-  const demandByIdFinal = new Map(
-    data.demands.map((d) => [d.id, d] as const)
-  );
 
   const groupMap = grouperDemandsParSemaineDemarrage(grid, data.demands);
   const sortedGroups = [...groupMap.entries()].sort((a, b) => a[0] - b[0]);
@@ -1366,14 +1550,21 @@ export function scheduleGreedyRepetitionMode(
     cumulativeSeed = cumulativeSeed.concat(cumulativeSlice);
   }
 
-  const sessionsCorrigees = sessionsSansCreneauxAvantDemarrage(
+  const demandByIdFinal = new Map(
+    data.demands.map((d) => [d.id, d] as const)
+  );
+  let sessionsSorties = sessionsSansCreneauxAvantDemarrage(
     placementGrid,
     expanded,
     demandByIdFinal
   );
-
+  sessionsSorties = sessionsSansCreneauxVacances(
+    placementGrid,
+    sessionsSorties,
+    demandByIdFinal
+  );
   return {
     ...data,
-    sessions: sessionsCorrigees,
+    sessions: sessionsSorties,
   };
 }

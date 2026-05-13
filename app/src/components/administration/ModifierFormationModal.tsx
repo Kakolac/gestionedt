@@ -40,6 +40,8 @@ export type FormationRow = {
   localisationRegion: string;
   /** `YYYY-MM-DD` ou vide pour les anciennes fiches. */
   dateDemarrageIso: string;
+  /** Périodes de vacances de la formation. */
+  datesVacances?: Array<{ debut: string; fin: string; nom: string }>;
 };
 
 type DraftLigne =
@@ -253,6 +255,7 @@ export function ModifierFormationModal({
 
             <FormationContraintesEditor
               defaultContraintes={row.contraintes}
+              defaultPeriodes={row.datesVacances ?? []}
               freezeDuringSubmit={pending}
             />
 

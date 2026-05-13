@@ -220,6 +220,21 @@ function parseFormation(raw: unknown): FormationReference | null {
     regRaw && regRaw.trim().length > 0 ? regRaw.trim() : undefined;
   const ddExtracted = extractDateDemarrageIsoDepuisValeurExport(o.dateDemarrageIso);
   const dateDemarrageIso = ddExtracted ?? undefined;
+  
+  const datesVacances: Array<{ debut: string; fin: string; nom: string }> = [];
+  if (Array.isArray(o.datesVacances)) {
+    for (const p of o.datesVacances) {
+      if (typeof p === "object" && p !== null) {
+        const debut = asString((p as Record<string, unknown>).debut);
+        const fin = asString((p as Record<string, unknown>).fin);
+        const nom = asString((p as Record<string, unknown>).nom);
+        if (debut && fin && nom) {
+          datesVacances.push({ debut, fin, nom });
+        }
+      }
+    }
+  }
+  
   return {
     id: canonPlanningId(id),
     nom,
@@ -228,6 +243,7 @@ function parseFormation(raw: unknown): FormationReference | null {
     ...(localisationPays ? { localisationPays } : {}),
     ...(localisationRegion ? { localisationRegion } : {}),
     ...(dateDemarrageIso ? { dateDemarrageIso } : {}),
+    ...(datesVacances.length > 0 ? { datesVacances } : {}),
   };
 }
 
@@ -587,6 +603,7 @@ export function normalizePlanningExport(
           ...(form.dateDemarrageIso
             ? { dateDemarrageIso: form.dateDemarrageIso }
             : {}),
+          formationDatesVacances: form.datesVacances ? [...form.datesVacances] : [],
         });
 
         for (const paquet of seances) {

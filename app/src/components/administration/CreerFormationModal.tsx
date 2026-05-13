@@ -13,10 +13,11 @@ import { FormationContraintesEditor } from "@/components/administration/Formatio
 import { FormationLocalisationEditor } from "@/components/administration/FormationLocalisationEditor";
 import { isoDateCalendrierLocal } from "@/lib/planning/planning-public-holidays";
 import type { ProfesseurOption } from "@/components/administration/FormationProfesseursChecklist";
+import type { FormationContrainteWire } from "@/lib/formationContraintes.shared";
 
 export type MatiereOptionCourte = { id: string; nom: string };
 
-type DraftLigne =
+export type DraftLigne =
   | {
       clientKey: string;
       kind: "existing";
@@ -40,6 +41,14 @@ type Props = {
   onSuccess?: () => void;
   matiereDisponibles: MatiereOptionCourte[];
   professeurOptions: ProfesseurOption[];
+  initialNom?: string;
+  initialDescription?: string;
+  initialLignes?: DraftLigne[];
+  initialContraintes?: FormationContrainteWire[];
+  initialLocalisationPays?: string;
+  initialLocalisationRegion?: string;
+  initialDateDemarrage?: string;
+  initialDatesVacances?: Array<{ debut: string; fin: string; nom: string }>;
 };
 
 const initial: FormationActionState | undefined = undefined;
@@ -90,13 +99,21 @@ export function CreerFormationModal({
   onSuccess,
   matiereDisponibles,
   professeurOptions,
+  initialNom,
+  initialDescription,
+  initialLignes,
+  initialContraintes,
+  initialLocalisationPays,
+  initialLocalisationRegion,
+  initialDateDemarrage,
+  initialDatesVacances,
 }: Props) {
   const [state, formAction, pending] = useActionState(
     createFormationAction,
     initial
   );
 
-  const [lignesDraft, setLignesDraft] = useState<DraftLigne[]>([]);
+  const [lignesDraft, setLignesDraft] = useState<DraftLigne[]>(initialLignes ?? []);
   const [addOpen, setAddOpen] = useState(false);
   const [addModalKey, setAddModalKey] = useState(0);
 
@@ -179,6 +196,7 @@ export function CreerFormationModal({
                 required
                 maxLength={200}
                 disabled={pending}
+                defaultValue={initialNom}
                 className="rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/30 disabled:opacity-60"
               />
             </label>
@@ -190,6 +208,7 @@ export function CreerFormationModal({
                 rows={3}
                 maxLength={2000}
                 disabled={pending}
+                defaultValue={initialDescription}
                 className="resize-y rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/30 disabled:opacity-60"
               />
             </label>
@@ -203,7 +222,7 @@ export function CreerFormationModal({
                 type="date"
                 required
                 disabled={pending}
-                defaultValue={isoDateCalendrierLocal(new Date())}
+                defaultValue={initialDateDemarrage || isoDateCalendrierLocal(new Date())}
                 className="rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/30 disabled:opacity-60"
               />
               <span className="text-xs text-slate-500">
@@ -213,13 +232,14 @@ export function CreerFormationModal({
             </label>
 
             <FormationContraintesEditor
-              defaultContraintes={[]}
+              defaultContraintes={initialContraintes ?? []}
+              defaultPeriodes={initialDatesVacances}
               freezeDuringSubmit={pending}
             />
 
             <FormationLocalisationEditor
-              defaultPays=""
-              defaultRegion=""
+              defaultPays={initialLocalisationPays ?? ""}
+              defaultRegion={initialLocalisationRegion ?? ""}
               freezeDuringSubmit={pending}
             />
 
