@@ -6,6 +6,7 @@ import { connectDB } from "@/lib/mongodb";
 import { Formation } from "@/lib/models/Formation";
 import { Matiere } from "@/lib/models/Matiere";
 import { Professeur } from "@/lib/models/Professeur";
+import { PeriodeVacances } from "@/lib/models/PeriodeVacances";
 import { PERMISSION_CREATION_FORMATION } from "@/lib/permissions/keys";
 import {
   leanWireFromFormationContraintesDoc,
@@ -17,6 +18,13 @@ import type {
   FormationRow,
 } from "@/components/administration/ModifierFormationModal";
 import type { ProfesseurOption } from "@/components/administration/FormationProfesseursChecklist";
+
+export type PeriodeVacancesOption = {
+  id: string;
+  nom: string;
+  debut: string;
+  fin: string;
+};
 
 function libelleProfesseurCourte(p: {
   prenom?: string | null;
@@ -111,12 +119,16 @@ export default async function CreationFormationPage() {
 
   await connectDB();
 
-  const [fichesLean, matsLean, profsLean] = await Promise.all([
+  const [fichesLean, matsLean, profsLean, periodesVacancesLean] = await Promise.all([
     Formation.find({}).lean(),
     Matiere.find({}).sort({ nom: 1 }).select("nom description").lean(),
     Professeur.find({})
       .sort({ nom: 1, prenom: 1 })
       .select("prenom nom matiereIds")
+      .lean(),
+    PeriodeVacances.find({})
+      .sort({ debut: 1, nom: 1 })
+      .select("nom debut fin")
       .lean(),
   ]);
 
@@ -149,6 +161,18 @@ export default async function CreationFormationPage() {
   }));
 
   const matiereDisponiblesPourCreation = toutesLesMatieres;
+
+  const periodeVacancesOptions: PeriodeVacancesOption[] = periodesVacancesLean.map((p) => ({
+    id: String(p._id),
+    nom: p.nom,
+    debut: p.debut,
+    fin: p.fin,
+  }));
+
+  const periodeVacancesMap = new Map<string, { nom: string; debut: string; fin: string }>();
+  for (const p of periodeVacancesOptions) {
+    periodeVacancesMap.set(p.id, { nom: p.nom, debut: p.debut, fin: p.fin });
+  }
 
   const rows: FormationRow[] = [...fichesLean]
     .sort((a, b) => {
@@ -288,6 +312,14 @@ export default async function CreationFormationPage() {
           .filter((p) => p.debut && p.fin && p.nom);
       }
 
+      const periodeVacancesIdsRaw = (f as { periodeVacancesIds?: unknown }).periodeVacancesIds;
+      let periodeVacancesIds: string[] = [];
+      if (Array.isArray(periodeVacancesIdsRaw)) {
+        periodeVacancesIds = periodeVacancesIdsRaw
+          .map((id) => String(id))
+          .filter((id) => id && id !== "undefined");
+      }
+
       return {
         id: String((fRaw as { _id: unknown })._id ?? ""),
         nom,
@@ -305,6 +337,7 @@ export default async function CreationFormationPage() {
         localisationRegion,
         dateDemarrageIso,
         datesVacances,
+        periodeVacancesIds,
       };
     });
 
@@ -347,6 +380,7 @@ export default async function CreationFormationPage() {
         matiereDisponiblesPourCreation={matiereDisponiblesPourCreation}
         toutesLesMatieres={toutesLesMatieres}
         professeurOptions={professeurOptions}
+        periodeVacancesOptions={periodeVacancesOptions}
       />
 
       <p className="text-sm">

@@ -16,6 +16,7 @@ import { FormationLocalisationEditor } from "@/components/administration/Formati
 import { isoDateCalendrierLocal } from "@/lib/planning/planning-public-holidays";
 import type { ProfesseurOption } from "@/components/administration/FormationProfesseursChecklist";
 import type { FormationContrainteWire } from "@/lib/formationContraintes.shared";
+import type { PeriodeVacancesOption } from "@/app/administration/creation-formation/page";
 
 export type FormationLigneListe = {
   matiereId: string;
@@ -42,6 +43,8 @@ export type FormationRow = {
   dateDemarrageIso: string;
   /** Périodes de vacances de la formation. */
   datesVacances?: Array<{ debut: string; fin: string; nom: string }>;
+  /** IDs des périodes de vacances référentielles. */
+  periodeVacancesIds?: string[];
 };
 
 type DraftLigne =
@@ -119,6 +122,7 @@ type Props = {
   row: FormationRow | null;
   toutesLesMatieres: MatiereOptionCourte[];
   professeurOptions: ProfesseurOption[];
+  periodeVacancesOptions: PeriodeVacancesOption[];
 };
 
 const initial: FormationActionState | undefined = undefined;
@@ -129,6 +133,7 @@ export function ModifierFormationModal({
   row,
   toutesLesMatieres,
   professeurOptions,
+  periodeVacancesOptions,
 }: Props) {
   const router = useRouter();
   const [lignesDraft, setLignesDraft] = useState<DraftLigne[]>(() =>
@@ -256,6 +261,8 @@ export function ModifierFormationModal({
             <FormationContraintesEditor
               defaultContraintes={row.contraintes}
               defaultPeriodes={row.datesVacances ?? []}
+              defaultPeriodeVacancesIds={row.periodeVacancesIds ?? []}
+              periodeVacancesOptions={periodeVacancesOptions}
               freezeDuringSubmit={pending}
             />
 

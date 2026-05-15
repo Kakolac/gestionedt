@@ -11,6 +11,7 @@ import { CreerSalleHubTile } from "@/components/administration/CreerSalleHubTile
 import { CreerProfesseurHubTile } from "@/components/administration/CreerProfesseurHubTile";
 import { CreerRoleMetierHubTile } from "@/components/administration/CreerRoleMetierHubTile";
 import { GestionUtilisateursHubTile } from "@/components/administration/GestionUtilisateursHubTile";
+import { GestionVacancesHubTile } from "@/components/administration/GestionVacancesHubTile";
 import { MatriceMenuHubTile } from "@/components/administration/MatriceMenuHubTile";
 import { resolveNavTileVisible } from "@/lib/menuVisibility/resolveNavTileVisible";
 import {
@@ -35,6 +36,7 @@ export default async function AdministrationHubPage() {
     showExportFormationJsonTile,
     showPlanningFormationTile,
     showCreationSalleTile,
+    showGestionVacancesTile,
     canMatrice,
   ] = await Promise.all([
     liveSessionHasAnyPermission(session, [PERMISSION_ADMINISTRATION_ACCESS]),
@@ -47,6 +49,7 @@ export default async function AdministrationHubPage() {
     resolveNavTileVisible(session, "hub.export_formation_json"),
     resolveNavTileVisible(session, "hub.planning_formation"),
     resolveNavTileVisible(session, "hub.creation_salle"),
+    resolveNavTileVisible(session, "hub.gestion_vacances"),
     liveSessionHasAnyPermission(session, [PERMISSION_ADMIN_MATRICE_MENU]),
   ]);
 
@@ -60,6 +63,7 @@ export default async function AdministrationHubPage() {
     showExportFormationJsonTile ||
     showPlanningFormationTile ||
     showCreationSalleTile ||
+    showGestionVacancesTile ||
     canMatrice;
 
   if (!canHub && !hasAnyShortcut) {
@@ -126,6 +130,11 @@ export default async function AdministrationHubPage() {
           {showCreationSalleTile ? (
             <li className="min-w-[240px] flex-1 basis-64 max-w-sm">
               <CreerSalleHubTile />
+            </li>
+          ) : null}
+          {showGestionVacancesTile ? (
+            <li className="min-w-[240px] flex-1 basis-64 max-w-sm">
+              <GestionVacancesHubTile />
             </li>
           ) : null}
           {canMatrice ? (

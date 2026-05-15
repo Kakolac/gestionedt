@@ -7,6 +7,7 @@ import { connectDB } from "@/lib/mongodb";
 import { Formation } from "@/lib/models/Formation";
 import { Matiere } from "@/lib/models/Matiere";
 import { Professeur } from "@/lib/models/Professeur";
+import { PeriodeVacances } from "@/lib/models/PeriodeVacances";
 import { PERMISSION_CREATION_FORMATION } from "@/lib/permissions/keys";
 import { parseFormationContraintesJsonForSave } from "@/lib/formationContraintes";
 import {
@@ -330,6 +331,60 @@ function parseDatesVacancesJsonFromForm(formData: FormData):
   return { ok: true, periodes };
 }
 
+function parsePeriodeVacancesIdsJsonFromForm(formData: FormData):
+  | FormationActionState
+  | { ok: true; periodeIds: string[] } {
+  const raw = formData.get("periodeVacancesIdsJson");
+  if (typeof raw !== "string") {
+    return { ok: true, periodeIds: [] };
+  }
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed === "[]") {
+    return { ok: true, periodeIds: [] };
+  }
+  if (trimmed.length > MAX_JSON_CHARS) {
+    return { ok: false, error: "Données des périodes de vacances trop volumineuses." };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return { ok: false, error: "Format JSON des périodes de vacances invalide." };
+  }
+
+  if (!Array.isArray(parsed)) {
+    return { ok: false, error: "Les périodes de vacances doivent être un tableau." };
+  }
+
+  const periodeIds: string[] = [];
+  for (const item of parsed) {
+    if (typeof item !== "string") continue;
+    const id = item.trim();
+    if (!mongoose.isValidObjectId(id)) continue;
+    if (periodeIds.includes(id)) continue;
+    periodeIds.push(id);
+  }
+
+  return { ok: true, periodeIds };
+}
+
+async function validatePeriodeVacancesIds(
+  periodeIds: string[]
+): Promise<FormationActionState | null> {
+  if (periodeIds.length === 0) return null;
+  await connectDB();
+  const oidList = periodeIds.map((id) => new mongoose.Types.ObjectId(id));
+  const count = await PeriodeVacances.countDocuments({ _id: { $in: oidList } });
+  if (count !== periodeIds.length) {
+    return {
+      ok: false,
+      error: "Une ou plusieurs périodes de vacances référencées sont introuvables.",
+    };
+  }
+  return null;
+}
+
 type LigneParsée =
   | {
       kind: "existing";
@@ -545,6 +600,11 @@ export async function createFormationAction(
   const dateParsed = parseFormationDateDemarrageFromForm(formData);
   if (!("dateDemarrageIso" in dateParsed)) return dateParsed;
 
+  const periodeIdsParsed = parsePeriodeVacancesIdsJsonFromForm(formData);
+  if (!("periodeIds" in periodeIdsParsed)) return periodeIdsParsed;
+  const periodeIdsValidation = await validatePeriodeVacancesIds(periodeIdsParsed.periodeIds);
+  if (periodeIdsValidation) return periodeIdsValidation;
+
   const parsedLignes = parseLignesJsonFromForm(formData);
   if (!parsedLignes.ok) return parsedLignes;
 
@@ -576,6 +636,9 @@ export async function createFormationAction(
       localisationPays: locParsed.localisationPays,
       localisationRegion: locParsed.localisationRegion,
       dateDemarrageIso: dateParsed.dateDemarrageIso,
+      periodeVacancesIds: periodeIdsParsed.periodeIds.map(
+        (id) => new mongoose.Types.ObjectId(id)
+      ),
     });
   } catch (e: unknown) {
     if (isDuplicateKeyError(e)) {
@@ -612,6 +675,11 @@ export async function updateFormationAction(
 
   const vacancesParsed = parseDatesVacancesJsonFromForm(formData);
   if (!("periodes" in vacancesParsed)) return vacancesParsed;
+
+  const periodeIdsParsed = parsePeriodeVacancesIdsJsonFromForm(formData);
+  if (!("periodeIds" in periodeIdsParsed)) return periodeIdsParsed;
+  const periodeIdsValidation = await validatePeriodeVacancesIds(periodeIdsParsed.periodeIds);
+  if (periodeIdsValidation) return periodeIdsValidation;
 
   const idRaw = formData.get("formationId");
   if (
@@ -654,6 +722,9 @@ export async function updateFormationAction(
   doc.localisationRegion = locParsed.localisationRegion;
   doc.dateDemarrageIso = dateParsed.dateDemarrageIso;
   doc.datesVacances = vacancesParsed.periodes;
+  doc.periodeVacancesIds = periodeIdsParsed.periodeIds.map(
+    (id) => new mongoose.Types.ObjectId(id)
+  );
 
   try {
     await doc.save();

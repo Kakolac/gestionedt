@@ -14,6 +14,7 @@ import { FormationLocalisationEditor } from "@/components/administration/Formati
 import { isoDateCalendrierLocal } from "@/lib/planning/planning-public-holidays";
 import type { ProfesseurOption } from "@/components/administration/FormationProfesseursChecklist";
 import type { FormationContrainteWire } from "@/lib/formationContraintes.shared";
+import type { PeriodeVacancesOption } from "@/app/administration/creation-formation/page";
 
 export type MatiereOptionCourte = { id: string; nom: string };
 
@@ -41,6 +42,7 @@ type Props = {
   onSuccess?: () => void;
   matiereDisponibles: MatiereOptionCourte[];
   professeurOptions: ProfesseurOption[];
+  periodeVacancesOptions: PeriodeVacancesOption[];
   initialNom?: string;
   initialDescription?: string;
   initialLignes?: DraftLigne[];
@@ -49,6 +51,7 @@ type Props = {
   initialLocalisationRegion?: string;
   initialDateDemarrage?: string;
   initialDatesVacances?: Array<{ debut: string; fin: string; nom: string }>;
+  initialPeriodeVacancesIds?: string[];
 };
 
 const initial: FormationActionState | undefined = undefined;
@@ -99,6 +102,7 @@ export function CreerFormationModal({
   onSuccess,
   matiereDisponibles,
   professeurOptions,
+  periodeVacancesOptions,
   initialNom,
   initialDescription,
   initialLignes,
@@ -107,6 +111,7 @@ export function CreerFormationModal({
   initialLocalisationRegion,
   initialDateDemarrage,
   initialDatesVacances,
+  initialPeriodeVacancesIds,
 }: Props) {
   const [state, formAction, pending] = useActionState(
     createFormationAction,
@@ -234,6 +239,8 @@ export function CreerFormationModal({
             <FormationContraintesEditor
               defaultContraintes={initialContraintes ?? []}
               defaultPeriodes={initialDatesVacances}
+              defaultPeriodeVacancesIds={initialPeriodeVacancesIds}
+              periodeVacancesOptions={periodeVacancesOptions}
               freezeDuringSubmit={pending}
             />
 

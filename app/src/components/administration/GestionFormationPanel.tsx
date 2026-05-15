@@ -13,12 +13,14 @@ import type { ProfesseurOption } from "@/components/administration/FormationProf
 import { SupprimerFormationConfirmModal } from "@/components/administration/SupprimerFormationConfirmModal";
 import { formatFormationContraintesListeCourte } from "@/lib/formationContraintes";
 import { libellePaysLocalisationAdmin } from "@/lib/planning/planning-public-holidays";
+import type { PeriodeVacancesOption } from "@/app/administration/creation-formation/page";
 
 type Props = {
   rows: FormationRow[];
   matiereDisponiblesPourCreation: MatiereOptionCourte[];
   toutesLesMatieres: MatiereOptionCourte[];
   professeurOptions: ProfesseurOption[];
+  periodeVacancesOptions: PeriodeVacancesOption[];
 };
 
 function rowVersDraftsForDuplicate(row: FormationRow): DraftLigne[] {
@@ -37,6 +39,7 @@ export function GestionFormationPanel({
   matiereDisponiblesPourCreation,
   toutesLesMatieres,
   professeurOptions,
+  periodeVacancesOptions,
 }: Props) {
   const router = useRouter();
   const [createKey, setCreateKey] = useState(0);
@@ -209,6 +212,7 @@ export function GestionFormationPanel({
         }}
         matiereDisponibles={matiereDisponiblesPourCreation}
         professeurOptions={professeurOptions}
+        periodeVacancesOptions={periodeVacancesOptions}
       />
 
       <CreerFormationModal
@@ -222,6 +226,7 @@ export function GestionFormationPanel({
         }}
         matiereDisponibles={toutesLesMatieres}
         professeurOptions={professeurOptions}
+        periodeVacancesOptions={periodeVacancesOptions}
         initialNom={duplicateRow ? `Copie de ${duplicateRow.nom}` : undefined}
         initialDescription={duplicateRow?.description}
         initialLignes={duplicateRow ? rowVersDraftsForDuplicate(duplicateRow) : undefined}
@@ -230,6 +235,7 @@ export function GestionFormationPanel({
         initialLocalisationRegion={duplicateRow?.localisationRegion}
         initialDateDemarrage={duplicateRow?.dateDemarrageIso}
         initialDatesVacances={duplicateRow?.datesVacances}
+        initialPeriodeVacancesIds={duplicateRow?.periodeVacancesIds}
       />
 
       <ModifierFormationModal
@@ -239,6 +245,7 @@ export function GestionFormationPanel({
         row={editRow}
         toutesLesMatieres={toutesLesMatieres}
         professeurOptions={professeurOptions}
+        periodeVacancesOptions={periodeVacancesOptions}
       />
 
       <SupprimerFormationConfirmModal

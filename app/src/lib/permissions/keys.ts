@@ -52,6 +52,8 @@ export const PERMISSION_CREATION_FORMATION =
   "feature.creation.formation" as const;
 export const PERMISSION_CREATION_SALLE = "feature.creation.salle" as const;
 
+export const PERMISSION_GESTION_VACANCES = "feature.gestion.vacances" as const;
+
 /** Hub /administration et tuile correspondante sur /accueil. */
 export const PERMISSION_ADMINISTRATION_ACCESS =
   "feature.administration.access" as const;
@@ -79,6 +81,7 @@ export const ADMIN_SEGMENT_PERMISSIONS = [
   PERMISSION_CREATION_MATIERE,
   PERMISSION_CREATION_FORMATION,
   PERMISSION_CREATION_SALLE,
+  PERMISSION_GESTION_VACANCES,
 ] as const;
 
 export const ROUTE_MATRIX_ROWS = [
@@ -144,6 +147,13 @@ export const ROUTE_MATRIX_ROWS = [
     routePath: "/administration/creation-salle",
     scopeNote:
       "Rôle création_salle ; référentiel salles CRUD ; tuile hub Administration.",
+  },
+  {
+    permissionKey: PERMISSION_GESTION_VACANCES,
+    routeLabel: "Gestion des vacances",
+    routePath: "/administration/gestion-vacances",
+    scopeNote:
+      "Gestion des périodes de vacances réutilisables ; référentiel CRUD ; tuile hub Administration.",
   },
   {
     permissionKey: PERMISSION_ADMINISTRATION_ACCESS,

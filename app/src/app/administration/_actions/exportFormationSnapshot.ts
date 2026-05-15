@@ -122,6 +122,7 @@ async function buildFormationSnapshotPlain(
   await connectDB();
   const oids = uniqueIds.map((id) => new mongoose.Types.ObjectId(id));
   const formationsLean = await Formation.find({ _id: { $in: oids } })
+    .populate('periodeVacancesIds')
     .lean()
     .exec();
 
@@ -130,6 +131,33 @@ async function buildFormationSnapshotPlain(
   }
 
   const asRecords = formationsLean as unknown as Record<string, unknown>[];
+  
+  // Fusionner datesVacances locales + périodes référentielles dans un seul champ datesVacances
+  for (const formation of asRecords) {
+    const datesVacancesLocales = Array.isArray(formation.datesVacances)
+      ? formation.datesVacances
+      : [];
+    const periodesReferencees = Array.isArray(formation.periodeVacancesIds)
+      ? formation.periodeVacancesIds
+      : [];
+    
+    // Convertir les périodes référentielles en format datesVacances
+    const datesFromRefs = periodesReferencees
+      .filter((p: unknown): p is Record<string, unknown> => typeof p === 'object' && p !== null)
+      .map((periode: Record<string, unknown>) => ({
+        debut: String(periode.debut ?? ''),
+        fin: String(periode.fin ?? ''),
+        nom: String(periode.nom ?? ''),
+      }))
+      .filter((p: { debut: string; fin: string; nom: string }) => p.debut && p.fin && p.nom);
+    
+    // Fusionner les deux sources
+    formation.datesVacances = [...datesVacancesLocales, ...datesFromRefs];
+    
+    // Supprimer periodeVacancesIds du résultat (déjà fusionné dans datesVacances)
+    delete formation.periodeVacancesIds;
+  }
+  
   const { matiereIdSet, profIdSet } = collectRefsFromFormationDocs(asRecords);
 
   const matiereOids = [...matiereIdSet].map(

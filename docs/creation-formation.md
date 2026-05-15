@@ -55,8 +55,12 @@ Le modèle Mongoose s’appelle **`Formation`** ; la **collection MongoDB** rest
 | `description`  | Texte libre (max 2000 caractères). |
 | `lignes`       | Tableau d’objets `{ matiereId, professeurIds[], nombreHeuresPrevues }`. Chaque ligne = une matière dans ce bloc + intervenants sur cette ligne + **volume horaire prévu pour cette matière** (entier ≥ 0). Index **unique** sur `lignes.matiereId` : une matière ne peut figurer que dans **un** document. |
 | `nombreHeures`  | **Somme** des `nombreHeuresPrevues` ; **recalculée** à chaque création / mise à jour serveur (pas de saisie séparée « total seul »). |
+| `periodeVacancesIds` | Tableau d'`ObjectId` : références vers les **périodes de vacances réutilisables** du référentiel (collection `periodesvacances`). Ces périodes sont partagées entre formations. |
+| `datesVacances` | Tableau d'objets `{ debut, fin, nom }` : **périodes spécifiques** à cette formation, définies localement (non réutilisables). |
 
 Horodatage : `createdAt` / `updatedAt` (Mongoose `timestamps`).
+
+**Contrainte planning — Périodes de vacances** : le moteur de planification respecte l'**union** des deux types de périodes (référentielles + spécifiques) : aucun cours ne sera placé pendant ces intervalles. Voir [gestion-vacances.md](./gestion-vacances.md) pour plus de détails sur le référentiel centralisé.
 
 ---
 
@@ -88,6 +92,43 @@ Les modales **création** / **modification** envoient, avec le formulaire, un ch
 Règles : pour une ligne, **exactement un** des deux modes (`existingMatiereId` **ou** `nouveauNom`, pas les deux). Chaque professeur d’une ligne « matière existante » doit avoir cette matière dans **`Professeur.matiereIds`**.
 
 Champs de méta du bloc : **`nomFormation`**, **`descriptionFormation`**. Identifiant en édition / suppression : **`formationId`**.
+
+---
+
+## Gestion des périodes de vacances
+
+Le système offre **deux mécanismes complémentaires** pour définir les périodes pendant lesquelles aucun cours ne doit être planifié :
+
+### 1. Périodes référentielles (réutilisables)
+
+- **Source** : référentiel centralisé accessible via **`/administration/gestion-vacances`**
+- **Sélection** : checkboxes dans la section **« Contraintes de planification — 5. Périodes de vacances »**
+- **Champ persisté** : `periodeVacancesIds` (tableau d'`ObjectId`)
+- **Champ formulaire** : `periodeVacancesIdsJson` (JSON des IDs sélectionnés)
+- **Avantages** : 
+  - Définition centralisée des vacances communes (Noël, Pâques, été, etc.)
+  - Modification globale : une mise à jour de la période affecte toutes les formations qui l'utilisent
+  - Réutilisabilité entre formations
+
+### 2. Périodes spécifiques (locales)
+
+- **Source** : définies directement dans chaque formation
+- **Ajout** : bouton **« + Ajouter une période spécifique »** dans la même section
+- **Champ persisté** : `datesVacances` (tableau d'objets `{ debut, fin, nom }`)
+- **Champ formulaire** : `datesVacancesJson` (JSON des périodes locales)
+- **Usage** : périodes propres à une formation (stage en entreprise, événement ponctuel, etc.)
+
+### Affichage et distinction visuelle
+
+Dans l'interface de gestion des contraintes :
+- Les **périodes référentielles** s'affichent avec un fond gris et ne sont **pas modifiables** localement
+- Les **périodes spécifiques** s'affichent avec un fond blanc et peuvent être **ajoutées/modifiées/supprimées**
+
+### Comportement du moteur de planification
+
+Le moteur respecte l'**union** des deux types : si une date est couverte par au moins une période (référentielle ou spécifique), aucun cours ne peut y être placé.
+
+Pour plus de détails sur la gestion du référentiel centralisé, voir [gestion-vacances.md](./gestion-vacances.md).
 
 ---
 

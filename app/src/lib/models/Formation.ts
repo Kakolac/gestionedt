@@ -140,6 +140,14 @@ const FormationSchema = new Schema(
         message: "La date de fin doit être postérieure ou égale à la date de début pour chaque période",
       },
     },
+    /**
+     * Références vers des périodes de vacances réutilisables depuis le référentiel.
+     * Ces périodes sont centralisées et peuvent être partagées entre formations.
+     */
+    periodeVacancesIds: {
+      type: [{ type: Schema.Types.ObjectId, ref: "PeriodeVacances" }],
+      default: [],
+    },
   },
   { timestamps: true }
 );

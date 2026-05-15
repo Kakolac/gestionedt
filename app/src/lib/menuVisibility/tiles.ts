@@ -8,6 +8,7 @@ import {
   PERMISSION_CREATION_MATIERE,
   PERMISSION_CREATION_PROFESSEUR,
   PERMISSION_CREATION_SALLE,
+  PERMISSION_GESTION_VACANCES,
 } from "@/lib/permissions/keys";
 
 export type NavTileScope = "accueil" | "hub";
@@ -93,6 +94,12 @@ export const NAV_TILE_DEFINITIONS: readonly NavTileDefinition[] = [
     label: "Création salle",
     scope: "hub",
     permissionKeys: [PERMISSION_CREATION_SALLE],
+  },
+  {
+    id: "hub.gestion_vacances",
+    label: "Gestion des vacances",
+    scope: "hub",
+    permissionKeys: [PERMISSION_GESTION_VACANCES],
   },
 ] as const;
 

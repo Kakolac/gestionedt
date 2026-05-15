@@ -30,15 +30,26 @@ type VacancePeriode = {
   nom: string;
 };
 
+type PeriodeVacancesOption = {
+  id: string;
+  nom: string;
+  debut: string;
+  fin: string;
+};
+
 type Props = {
   defaultContraintes: FormationContrainteWire[];
   defaultPeriodes?: VacancePeriode[];
+  defaultPeriodeVacancesIds?: string[];
+  periodeVacancesOptions: PeriodeVacancesOption[];
   freezeDuringSubmit: boolean;
 };
 
 export function FormationContraintesEditor({
   defaultContraintes,
   defaultPeriodes = [],
+  defaultPeriodeVacancesIds = [],
+  periodeVacancesOptions,
   freezeDuringSubmit,
 }: Props) {
   const [bundle, setBundle] = useState<FormationContrainteWire[]>(() =>
@@ -46,6 +57,9 @@ export function FormationContraintesEditor({
   );
 
   const [periodes, setPeriodes] = useState<VacancePeriode[]>(defaultPeriodes);
+  const [selectedPeriodeIds, setSelectedPeriodeIds] = useState<Set<string>>(
+    () => new Set(defaultPeriodeVacancesIds)
+  );
   const [modaleOuverte, setModaleOuverte] = useState(false);
   const [periodeEnCours, setPeriodeEnCours] = useState<Partial<VacancePeriode>>({});
   const [indexEdition, setIndexEdition] = useState<number | null>(null);
@@ -59,6 +73,23 @@ export function FormationContraintesEditor({
   );
 
   const periodesJsonPayload = useMemo(() => JSON.stringify(periodes), [periodes]);
+
+  const periodeVacancesIdsJsonPayload = useMemo(
+    () => JSON.stringify([...selectedPeriodeIds]),
+    [selectedPeriodeIds]
+  );
+
+  const togglePeriodeVacances = useCallback((id: string) => {
+    setSelectedPeriodeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
 
   const pause = bundle.find((c): c is Extract<FormationContrainteWire, { kind: "pause_midi" }> => c.kind === "pause_midi");
   const dem = bundle.find(
@@ -151,6 +182,7 @@ export function FormationContraintesEditor({
     >
       <input type="hidden" name="formationContraintesJson" value={jsonPayload} readOnly />
       <input type="hidden" name="datesVacancesJson" value={periodesJsonPayload} readOnly />
+      <input type="hidden" name="periodeVacancesIdsJson" value={periodeVacancesIdsJsonPayload} readOnly />
       <p
         id="formation-contraintes-editeur-titre"
         className="font-medium text-slate-800"
@@ -307,17 +339,25 @@ export function FormationContraintesEditor({
           <p className="text-xs font-semibold text-slate-700">
             5. Périodes de vacances (aucun cours ne sera planifié pendant ces périodes)
           </p>
-          {periodes.length === 0 ? (
-            <p className="text-[0.65rem] text-slate-500">
-              Aucune période de vacances définie (optionnel)
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {periodes.map((periode, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between gap-2 rounded-lg border border-slate-100 bg-slate-50/50 px-2 py-1.5"
+          
+          {/* Périodes référentielles */}
+          {periodeVacancesOptions.length > 0 && (
+            <div className="space-y-2 border-b border-slate-100 pb-3">
+              <p className="text-[0.65rem] font-medium text-slate-600">
+                Périodes référentielles (réutilisables)
+              </p>
+              {periodeVacancesOptions.map((periode) => (
+                <label
+                  key={periode.id}
+                  className="flex cursor-pointer items-start gap-2 rounded border border-slate-100 bg-slate-50/50 px-2 py-1.5"
                 >
+                  <input
+                    type="checkbox"
+                    checked={selectedPeriodeIds.has(periode.id)}
+                    onChange={() => togglePeriodeVacances(periode.id)}
+                    disabled={freezeDuringSubmit}
+                    className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/40"
+                  />
                   <div className="flex-1">
                     <p className="text-xs font-medium text-slate-700">{periode.nom}</p>
                     <p className="text-[0.65rem] text-slate-500">
@@ -325,27 +365,56 @@ export function FormationContraintesEditor({
                       {new Date(periode.fin + "T12:00").toLocaleDateString("fr-FR")}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => supprimerPeriode(index)}
-                    disabled={freezeDuringSubmit}
-                    className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-                    title="Supprimer cette période"
-                  >
-                    ×
-                  </button>
-                </div>
+                </label>
               ))}
             </div>
           )}
-          <button
-            type="button"
-            onClick={ouvrirModaleAjout}
-            disabled={freezeDuringSubmit}
-            className="mt-2 w-full rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
-          >
-            + Ajouter une période de vacances
-          </button>
+
+          {/* Périodes locales */}
+          <div className="space-y-2">
+            <p className="text-[0.65rem] font-medium text-slate-600">
+              Périodes spécifiques à cette formation
+            </p>
+            {periodes.length === 0 ? (
+              <p className="text-[0.65rem] text-slate-500">
+                Aucune période spécifique définie (optionnel)
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {periodes.map((periode, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between gap-2 rounded-lg border border-slate-100 bg-white px-2 py-1.5"
+                  >
+                    <div className="flex-1">
+                      <p className="text-xs font-medium text-slate-700">{periode.nom}</p>
+                      <p className="text-[0.65rem] text-slate-500">
+                        du {new Date(periode.debut + "T12:00").toLocaleDateString("fr-FR")} au{" "}
+                        {new Date(periode.fin + "T12:00").toLocaleDateString("fr-FR")}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => supprimerPeriode(index)}
+                      disabled={freezeDuringSubmit}
+                      className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                      title="Supprimer cette période"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={ouvrirModaleAjout}
+              disabled={freezeDuringSubmit}
+              className="mt-2 w-full rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+            >
+              + Ajouter une période spécifique
+            </button>
+          </div>
         </div>
       </div>
 

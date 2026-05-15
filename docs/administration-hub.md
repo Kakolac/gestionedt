@@ -14,6 +14,7 @@ Ce document décrit le **hub `/administration`**, les permissions associées et 
    - **Formation** → **`/administration/creation-formation`** (regroupement de matières ; **heures prévues par matière** + total du bloc ; intervenants par ligne ; permission **`feature.creation.formation`** ; rôle **`création_formation`** — détail : [`creation-formation.md`](./creation-formation.md))
    - **Export JSON formations** → **`/administration/export-formation-json`** (sélection d’une ou plusieurs formations ; export brut Mongo + matières et professeurs référencés ; même permission **`feature.creation.formation`** ; id matrice **`hub.export_formation_json`** — détail : [`export-json-formation.md`](./export-json-formation.md))
    - **Création salle** → **`/administration/creation-salle`** (référentiel salles CRUD ; classique ou salle spécifique ; permission **`feature.creation.salle`** ; rôle **`création_salle`** — [`creation-gestion-salles.md`](./creation-gestion-salles.md))
+   - **Gestion des vacances** → **`/administration/gestion-vacances`** (référentiel périodes de vacances réutilisables ; CRUD ; permission **`feature.gestion.vacances`** — détail : [`gestion-vacances.md`](./gestion-vacances.md))
    - **Matrice visibilité menus** → **`/administration/matricemenu`** (hors registre ; pas pilotée par la matrice elle‑même)
 3. Chaque sous‑route métier est protégée par **sa permission dédiée** ; le **`layout.tsx`** du segment autorise l’entrée si **l’union** des permissions listées dans `ADMIN_SEGMENT_PERMISSIONS` (`keys.ts`) est satisfaite (dont création classe / professeur / matière / formation / salle, pour les comptes sans droit hub « pur » mais avec ces rôles de base ; liens directs possibles vers les gardes enfants).
 
@@ -30,6 +31,7 @@ Ce document décrit le **hub `/administration`**, les permissions associées et 
 | `PERMISSION_CREATION_MATIERE` | `feature.creation.matiere` | Page hub + **`/administration/creation-matiere`** |
 | `PERMISSION_CREATION_FORMATION` | `feature.creation.formation` | Page hub + **`/administration/creation-formation`** + **`/administration/export-formation-json`** |
 | `PERMISSION_CREATION_SALLE` | `feature.creation.salle` | Page hub + **`/administration/creation-salle`** |
+| `PERMISSION_GESTION_VACANCES` | `feature.gestion.vacances` | Page hub + **`/administration/gestion-vacances`** (référentiel périodes de vacances) |
 
 Le rôle Mongo **`admin`** (seed [`seed-roles.ts`](../app/scripts/init/seed-roles.ts)) reçoit l’union **`ALL_APP_PERMISSION_KEYS`** : après ajout des clés, exécuter depuis **`app/`** :
 
@@ -59,6 +61,10 @@ pour réinjecter les permissions sur les documents `Role`.
 | [`scripts/init/migrate-hub-export-formation-tile.ts`](../app/scripts/init/migrate-hub-export-formation-tile.ts) | Initialise `hub.export_formation_json` dans la matrice (copie depuis `hub.creation_formation`) |
 | [`app/src/app/administration/creation-salle/page.tsx`](../app/src/app/administration/creation-salle/page.tsx) | Référentiel salles CRUD (garde **`feature.creation.salle`**) |
 | [`app/src/app/administration/_actions/salles.ts`](../app/src/app/administration/_actions/salles.ts) | Actions serveur `Salle` |
+| [`app/src/app/administration/gestion-vacances/page.tsx`](../app/src/app/administration/gestion-vacances/page.tsx) | Référentiel périodes de vacances CRUD (garde **`feature.gestion.vacances`**) |
+| [`app/src/app/administration/_actions/vacances.ts`](../app/src/app/administration/_actions/vacances.ts) | Actions serveur `PeriodeVacances` (création, mise à jour, suppression) |
+| [`app/src/lib/models/PeriodeVacances.ts`](../app/src/lib/models/PeriodeVacances.ts) | Modèle Mongoose périodes de vacances réutilisables |
+| [`app/scripts/init/migrate-hub-gestion-vacances-tile.ts`](../app/scripts/init/migrate-hub-gestion-vacances-tile.ts) | Initialise `hub.gestion_vacances` dans la matrice |
 | [`app/src/app/administration/matricemenu/page.tsx`](../app/src/app/administration/matricemenu/page.tsx) | Matrice visibilité |
 | [`app/src/app/administration/roles-metier/page.tsx`](../app/src/app/administration/roles-metier/page.tsx) | Liste des rôles métier |
 | [`app/src/app/administration/roles-metier/nouveau/page.tsx`](../app/src/app/administration/roles-metier/nouveau/page.tsx) | Page création rôle métier |
@@ -91,6 +97,7 @@ Pour restreindre **l’affichage** des tuiles par **rôle métier**, voir **[mat
 
 ## Voir aussi
 
+- [Gestion des vacances (référentiel)](./gestion-vacances.md)
 - [Export JSON formations](./export-json-formation.md)
 - [Gestion des salles (référentiel)](./creation-gestion-salles.md)
 - [Matrice visibilité des menus](./matrice-visibilite-menus.md)
