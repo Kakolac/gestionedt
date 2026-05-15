@@ -1020,7 +1020,7 @@ function repliquerGabaritPourPlage(
 }
 
 /** Place les périodes pour un groupe ; renvoie données avec séances du dernier passage utile + liste répliquée + cumul pour seed. */
-function placerEtRepliquerGabaritGroupe(
+async function placerEtRepliquerGabaritGroupe(
   weeklyData: PlanningData,
   placementGrid: PlanningGridConfig,
   templateWeek: number,
@@ -1028,7 +1028,7 @@ function placerEtRepliquerGabaritGroupe(
   nw: number,
   groupeIndex: number,
   seedPlaced: readonly PlanningSession[]
-): { replicated: PlanningSession[]; cumulativeSlice: PlanningSession[] } {
+): Promise<{ replicated: PlanningSession[]; cumulativeSlice: PlanningSession[] }> {
   const greedyOptsBase = {
     slotsSemaineFixe: templateWeek,
     ignorerJoursFeriesPourGabaritHebdoRepete: true,
@@ -1036,7 +1036,7 @@ function placerEtRepliquerGabaritGroupe(
   } as const;
 
   const blockSizes = splitNwIntoNearlyEqualParts(nw, P);
-  const baseline = scheduleGreedy(weeklyData, placementGrid, {
+  const baseline = await scheduleGreedy(weeklyData, placementGrid, {
     orderVariantSalt: groupeIndex * 10_009,
     ...greedyOptsBase,
   });
@@ -1044,7 +1044,7 @@ function placerEtRepliquerGabaritGroupe(
 
   const periodResults: PlanningData[] = [baseline];
   for (let p = 1; p < P; p += 1) {
-    let periodResult = scheduleGreedy(weeklyData, placementGrid, {
+    let periodResult = await scheduleGreedy(weeklyData, placementGrid, {
       orderVariantSalt: groupeIndex * 10_009 + p * 97_771,
       ...greedyOptsBase,
     });
@@ -1153,11 +1153,11 @@ function sessionsSansCreneauxVacances(
  * @param options Options pour scheduleGreedy (runPostVacationRepair est forcé à false)
  * @returns Planning avec tentative de placement des sessions unscheduled, sessions scheduled inchangées
  */
-function placerSessionsNonPlanifieesCible(
+async function placerSessionsNonPlanifieesCible(
   data: PlanningData,
   grid: PlanningGridConfig,
   options?: ScheduleGreedyOptions
-): PlanningData {
+): Promise<PlanningData> {
   const scheduled = data.sessions.filter((s) => s.statut === "scheduled");
   const unscheduled = data.sessions.filter((s) => s.statut === "unscheduled");
 
@@ -1170,7 +1170,7 @@ function placerSessionsNonPlanifieesCible(
     sessions: unscheduled,
   };
 
-  const result = scheduleGreedy(subData, grid, {
+  const result = await scheduleGreedy(subData, grid, {
     ...options,
     seedPlaced: scheduled,
     runPostVacationRepair: false,
@@ -1195,11 +1195,11 @@ function placerSessionsNonPlanifieesCible(
  * Le second passage utilise `placerSessionsNonPlanifieesCible` pour ne replacer que les
  * sessions marquées `unscheduled`, préservant toutes les sessions `scheduled` (optimisation perf).
  */
-export function repairPlanningVacancesEtDemarrage(
+export async function repairPlanningVacancesEtDemarrage(
   data: PlanningData,
   grid: PlanningGridConfig,
   options?: ScheduleGreedyOptions
-): PlanningData {
+): Promise<PlanningData> {
   const demandById = new Map(data.demands.map((d) => [d.id, d] as const));
   let cleaned = sessionsSansCreneauxAvantDemarrage(
     grid,
@@ -1211,7 +1211,7 @@ export function repairPlanningVacancesEtDemarrage(
     return { ...data, sessions: cleaned };
   }
   const { runPostVacationRepair: _r, ...greedyOpts } = options ?? {};
-  return placerSessionsNonPlanifieesCible(
+  return await placerSessionsNonPlanifieesCible(
     { ...data, sessions: cleaned },
     grid,
     greedyOpts
@@ -1222,12 +1222,12 @@ export function repairPlanningVacancesEtDemarrage(
  * Alias : répare un planning déjà produit (retrait des créneaux invalides vacances / avant démarrage
  * puis re-placement des séances concernées).
  */
-export function repairPlanningAvecVacances(
+export async function repairPlanningAvecVacances(
   data: PlanningData,
   grid: PlanningGridConfig,
   options?: ScheduleGreedyOptions
-): PlanningData {
-  return repairPlanningVacancesEtDemarrage(data, grid, options);
+): Promise<PlanningData> {
+  return await repairPlanningVacancesEtDemarrage(data, grid, options);
 }
 
 /**
@@ -1261,15 +1261,15 @@ export function repairPlanningAvecVacances(
  * );
  * ```
  */
-export function completerPlanningAvecSessionsNonPlanifiees(
+export async function completerPlanningAvecSessionsNonPlanifiees(
   data: PlanningData,
   grid: PlanningGridConfig,
   options?: ScheduleGreedyOptions
-): PlanningData {
-  return placerSessionsNonPlanifieesCible(data, grid, options);
+): Promise<PlanningData> {
+  return await placerSessionsNonPlanifieesCible(data, grid, options);
 }
 
-function greedyPlaceOrdered(
+async function greedyPlaceOrdered(
   data: PlanningData,
   grid: PlanningGridConfig,
   sorted: readonly PlanningSession[],
@@ -1277,8 +1277,9 @@ function greedyPlaceOrdered(
   matiereById: Map<string, MatiereReference>,
   blockerOptions?: SessionPlacementBlockerOptions,
   slotsSemaineFixe?: number,
-  seedPlaced?: readonly PlanningSession[]
-): PlanningSession[] {
+  seedPlaced?: readonly PlanningSession[],
+  onProgress?: (current: number, total: number) => Promise<void>
+): Promise<PlanningSession[]> {
   const placed: PlanningSession[] = [];
   if (seedPlaced) {
     for (const s of seedPlaced) {
@@ -1288,8 +1289,14 @@ function greedyPlaceOrdered(
     }
   }
   const out: PlanningSession[] = [];
+  const totalSessions = sorted.length;
 
-  for (let placementIndex = 0; placementIndex < sorted.length; placementIndex += 1) {
+  for (let placementIndex = 0; placementIndex < totalSessions; placementIndex += 1) {
+    // Rendre la main au navigateur tous les 5 sessions
+    if (onProgress && placementIndex % 5 === 0) {
+      await onProgress(placementIndex, totalSessions);
+    }
+    
     const session = sorted[placementIndex]!;
     const demand = demandById.get(session.demandId);
     const matiere = matiereById.get(session.matiereId);
@@ -1419,13 +1426,20 @@ export type ScheduleGreedyOptions = {
    * Désactivé par défaut : coût élevé sur de grands horizons / beaucoup de séances.
    */
   runPostVacationRepair?: boolean;
+  /**
+   * Callback de progression appelé périodiquement pendant le calcul.
+   * Permet de rendre la main au navigateur et d'afficher la progression.
+   * @param progress - Valeur entre 0 et 1 (0% à 100%)
+   * @param message - Message descriptif de l'étape en cours
+   */
+  onProgress?: (progress: number, message: string) => Promise<void>;
 };
 
-export function scheduleGreedy(
+export async function scheduleGreedy(
   data: PlanningData,
   grid: PlanningGridConfig = DEFAULT_PLANNING_GRID,
   options?: ScheduleGreedyOptions
-): PlanningData {
+): Promise<PlanningData> {
   const demandById = new Map(
     data.demands.map((d) => [d.id, d] as const)
   );
@@ -1447,7 +1461,15 @@ export function scheduleGreedy(
     matiereById,
     options?.orderVariantSalt ?? 0
   );
-  let best = greedyPlaceOrdered(
+  
+  // Callback interne pour progression détaillée
+  const internalProgress = options?.onProgress 
+    ? async (current: number, total: number) => {
+        await options.onProgress!(current / total, `Placement ${current}/${total} séances...`);
+      }
+    : undefined;
+  
+  let best = await greedyPlaceOrdered(
     data,
     grid,
     orders[0]!,
@@ -1455,13 +1477,27 @@ export function scheduleGreedy(
     matiereById,
     blockerOpts,
     sf,
-    seed
+    seed,
+    internalProgress
   );
   let bestU = countUnscheduledSessions(best);
 
   if (bestU > 0) {
-    for (let i = 1; i < orders.length; i += 1) {
-      const cand = greedyPlaceOrdered(
+    const totalOrders = orders.length;
+    
+    // Appeler le callback au début
+    if (options?.onProgress) {
+      await options.onProgress(0, `Début du placement - ${bestU} séances à placer`);
+    }
+    
+    for (let i = 1; i < totalOrders; i += 1) {
+      // Appeler le callback AVANT le calcul pour montrer la progression
+      if (options?.onProgress) {
+        const progress = i / totalOrders;
+        await options.onProgress(progress, `Tentative ${i}/${totalOrders} - ${bestU} séances restantes`);
+      }
+      
+      const cand = await greedyPlaceOrdered(
         data,
         grid,
         orders[i]!,
@@ -1469,7 +1505,8 @@ export function scheduleGreedy(
         matiereById,
         blockerOpts,
         sf,
-        seed
+        seed,
+        internalProgress
       );
       const u = countUnscheduledSessions(cand);
       if (u < bestU) {
@@ -1477,6 +1514,11 @@ export function scheduleGreedy(
         bestU = u;
         if (bestU === 0) break;
       }
+    }
+    
+    // Appeler le callback à la fin
+    if (options?.onProgress) {
+      await options.onProgress(1, `Terminé - ${bestU} séances non placées`);
     }
   }
 
@@ -1486,7 +1528,7 @@ export function scheduleGreedy(
   };
   if (options?.runPostVacationRepair) {
     const { runPostVacationRepair: _r, ...repairOpts } = options;
-    return repairPlanningVacancesEtDemarrage(placed, grid, repairOpts);
+    return await repairPlanningVacancesEtDemarrage(placed, grid, repairOpts);
   }
   return placed;
 }
@@ -1545,7 +1587,7 @@ export async function scheduleGreedyRepetitionMode(
   const onProgress = options?.onProgress;
 
   if (nw <= 1) {
-    return scheduleGreedy(data, grid);
+    return await scheduleGreedy(data, grid, { onProgress });
   }
 
   await onProgress?.(0, "Initialisation du planning...");
@@ -1572,7 +1614,7 @@ export async function scheduleGreedyRepetitionMode(
       `Placement du groupe ${gi + 1}/${totalGroups} (${demandsGroupe.length} formation(s))...`
     );
 
-    const { replicated, cumulativeSlice } = placerEtRepliquerGabaritGroupe(
+    const { replicated, cumulativeSlice } = await placerEtRepliquerGabaritGroupe(
       weeklyData,
       placementGrid,
       templateWeek,

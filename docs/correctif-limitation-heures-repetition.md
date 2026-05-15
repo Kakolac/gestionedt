@@ -168,9 +168,26 @@ Le bouton "Tenter de replacer" dans la section des statistiques de vacances disp
 - Animation fluide sans blocage complet du navigateur
 
 **Limitations actuelles** :
-- Le calcul `scheduleGreedy` reste synchrone et peut ralentir le navigateur
-- Pour de très gros volumes (>100 séances), une légère latence peut être perceptible
-- **Solution future** : Implémenter le calcul dans un Web Worker pour exécution parallèle réelle
+- Le calcul `scheduleGreedy` reste synchrone et bloque le thread principal
+- Pour de gros volumes (>50 séances), le navigateur peut afficher "La page ne répond pas"
+- **C'est normal** : Un message d'avertissement s'affiche pour rassurer l'utilisateur
+- L'utilisateur doit simplement attendre sans fermer l'onglet
+- Le calcul se termine généralement en quelques secondes
+
+**Message d'avertissement automatique** :
+Quand la progression atteint ~40% (juste avant le calcul intensif), un message s'affiche :
+```
+⏳ Calcul intensif en cours...
+Le navigateur peut afficher "La page ne répond pas" - c'est normal, 
+veuillez patienter sans fermer l'onglet.
+```
+
+**Solution future pour éliminer complètement le blocage** :
+- Implémenter le calcul dans un **Web Worker**
+- Exécution dans un thread séparé (parallélisme réel)
+- Aucun impact sur l'UI, aucun message "page ne répond pas"
+- Complexité d'implémentation importante (sérialisation des données, communication inter-threads)
+- Ou : Réécrire `scheduleGreedy` en mode asynchrone avec yields périodiques
 
 **Implémentation** :
 - Fonction `onTryReplaceUnscheduled` asynchrone
@@ -179,9 +196,84 @@ Le bouton "Tenter de replacer" dans la section des statistiques de vacances disp
 - État `replacementProgress` avec `{ current, total }`
 - Logs console avec durée du calcul
 
+## Optimisation finale : découpage de `scheduleGreedy` pour éviter le blocage navigateur (13 mai 2026)
+
+### Problématique
+Malgré les indicateurs de progression, le navigateur affichait toujours "La page ne répond pas" pendant les calculs intensifs car `scheduleGreedy` était entièrement synchrone et bloquait le thread principal.
+
+### Solution implémentée : découpage en "pulses"
+`scheduleGreedy` a été transformé en fonction **asynchrone** avec des pauses périodiques pour rendre la main au navigateur :
+
+#### 1. Modification de la signature
+```typescript
+// Avant
+export function scheduleGreedy(
+  data: PlanningData,
+  grid: PlanningGridConfig,
+  options?: ScheduleGreedyOptions
+): PlanningData
+
+// Après
+export async function scheduleGreedy(
+  data: PlanningData,
+  grid: PlanningGridConfig,
+  options?: ScheduleGreedyOptions
+): Promise<PlanningData>
+```
+
+#### 2. Ajout de pauses dans la boucle principale
+```typescript
+if (bestU > 0) {
+  const totalOrders = orders.length;
+  for (let i = 1; i < totalOrders; i += 1) {
+    const cand = greedyPlaceOrdered(...);
+    // ... logique de placement ...
+    
+    // Pause tous les 2 itérations pour rendre la main au navigateur
+    if (options?.onProgress && i % 2 === 0) {
+      const progress = i / totalOrders;
+      await options.onProgress(progress, `Tentative ${i}/${totalOrders} - ${bestU} séances restantes`);
+    }
+  }
+}
+```
+
+Le callback `onProgress` utilise `await new Promise(resolve => setTimeout(resolve, 0))` pour rendre la main au navigateur entre chaque itération.
+
+#### 3. Propagation de l'asynchronisme
+Toutes les fonctions appelant `scheduleGreedy` ont été rendues asynchrones :
+- `placerEtRepliquerGabaritGroupe` → `async`
+- `placerSessionsNonPlanifieesCible` → `async`
+- `repairPlanningVacancesEtDemarrage` → `async`
+- `repairPlanningAvecVacances` → `async`
+- `completerPlanningAvecSessionsNonPlanifiees` → `async`
+
+#### 4. Harmonisation des callbacks de progression
+Tous les callbacks `onProgress` utilisent maintenant la même signature :
+```typescript
+onProgress?: (progress: number, message: string) => Promise<void>
+```
+Où `progress` est entre 0 et 1 (0% à 100%).
+
+### Résultat
+✅ **Le navigateur ne bloque plus** grâce aux pauses périodiques  
+✅ **L'indicateur de progression reste fluide** pendant tout le calcul  
+✅ **Le message d'avertissement a été retiré** (devenu inutile)  
+✅ **L'expérience utilisateur est grandement améliorée**
+
+### Note technique
+Cette solution découpe le travail synchrone en "tranches" avec des pauses asynchrones (`setTimeout(0)`) entre chaque tranche. Le navigateur peut ainsi :
+- Mettre à jour l'interface utilisateur
+- Traiter les événements utilisateur
+- Afficher la progression en temps réel
+
+Pour des calculs encore plus longs, une migration vers Web Workers reste possible mais n'est plus urgente avec ce découpage. Le découpage tous les 2 itérations (`i % 2 === 0`) offre un bon équilibre entre réactivité et performance.
+
 ## Historique des optimisations
 
 - **13 mai 2026 (après-midi)** : 
   - Optimisation de la création de la Map `demandById` pour améliorer les performances
   - Ajout d'un indicateur de progression visuel pour le mode répétition
   - Ajout d'un indicateur de chargement pour le bouton de replacement manuel des séances non planifiées
+  - **Transformation de `scheduleGreedy` en fonction asynchrone avec découpage en "pulses"**
+  - Suppression du message d'avertissement "page ne répond pas" (devenu obsolète)

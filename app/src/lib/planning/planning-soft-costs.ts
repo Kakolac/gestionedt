@@ -18,6 +18,8 @@ const W_SALLE_SWITCH = 8;
 const W_HEURES_DEJA_EN_SEMAINE = 5;
 /** Ancrage round-robin : la k-ième séance traitée favorise la semaine `(k % N) + 1` (avec N = horizon). */
 const W_ANCRE_SEMAINE_ROUND_ROBIN = 4;
+/** Équilibrage : favorise les jours moins chargés pour éviter d'avoir des jours vides et d'autres surchargés. */
+const W_EQUILIBRAGE_JOUR = 3;
 
 /**
  * Désincitation à violer une plage horaire matière lorsque la contrainte est « souple » (priorité &gt; max strict).
@@ -85,6 +87,25 @@ function heuresDejaPoseesSemaine(
 }
 
 /**
+ * Calcule le nombre d'heures déjà placées sur un jour spécifique d'une semaine.
+ * Utilisé pour équilibrer la charge entre les jours de la semaine.
+ */
+function heuresDejaPlaceesJour(
+  placed: readonly PlanningSession[],
+  semaine: number,
+  jour: number
+): number {
+  let h = 0;
+  for (const s of placed) {
+    if (s.statut !== "scheduled" || s.assignedSlot == null) continue;
+    if (slotSemaine(s.assignedSlot) !== semaine) continue;
+    if (s.assignedSlot.jour !== jour) continue;
+    h += s.duree;
+  }
+  return h;
+}
+
+/**
  * Coût local heuristique : trous dans la journée du prof, concentration matière le même jour,
  * changement de salle entre créneaux contigus (mode liste). Si l’horizon comporte plusieurs semaines,
  * pénalité sur les semaines déjà chargées en heures + léger ancrage round-robin pour répartir les séances.
@@ -111,6 +132,10 @@ export function softPlacementCost(
     const cible = (placementIndex % nw) + 1;
     cost += W_ANCRE_SEMAINE_ROUND_ROBIN * Math.abs(semaine - cible);
   }
+
+  // Équilibrage des jours : favorise les jours moins chargés pour mieux répartir
+  const heuresJour = heuresDejaPlaceesJour(placed, semaine, jour);
+  cost += W_EQUILIBRAGE_JOUR * heuresJour;
 
   cost +=
     W_GAP *

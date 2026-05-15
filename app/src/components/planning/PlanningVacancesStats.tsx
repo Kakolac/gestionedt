@@ -359,24 +359,26 @@ export function PlanningVacancesStats({
             </button>
             
             {replacementProgress && (
-              <div className="mt-[2vh] rounded-xl border border-violet-200/80 bg-violet-50/60 px-[2.5vw] py-[1.5vh]">
-                <div className="flex items-center justify-between gap-4 mb-[1vh]">
-                  <p className="text-[clamp(0.82rem,1.1vw,0.92rem)] font-semibold text-violet-950">
-                    Traitement en cours...
-                  </p>
-                  <p className="text-[clamp(0.9rem,1.2vw,1rem)] font-bold text-violet-700">
-                    {replacementProgress.current} / {replacementProgress.total}
+              <div className="mt-[2vh] space-y-[1vh]">
+                <div className="rounded-xl border border-violet-200/80 bg-violet-50/60 px-[2.5vw] py-[1.5vh]">
+                  <div className="flex items-center justify-between gap-4 mb-[1vh]">
+                    <p className="text-[clamp(0.82rem,1.1vw,0.92rem)] font-semibold text-violet-950">
+                      Traitement en cours...
+                    </p>
+                    <p className="text-[clamp(0.9rem,1.2vw,1rem)] font-bold text-violet-700">
+                      {replacementProgress.current} / {replacementProgress.total}
+                    </p>
+                  </div>
+                  <div className="h-[1.2vh] overflow-hidden rounded-full bg-violet-200/70 shadow-inner">
+                    <div
+                      className="h-full bg-gradient-to-r from-violet-500 via-purple-600 to-fuchsia-600 transition-all duration-300 ease-out"
+                      style={{ width: `${(replacementProgress.current / replacementProgress.total) * 100}%` }}
+                    />
+                  </div>
+                  <p className="mt-[1vh] text-center text-[clamp(0.75rem,0.95vw,0.82rem)] text-violet-700">
+                    {Math.round((replacementProgress.current / replacementProgress.total) * 100)}% - {replacementProgress.total - replacementProgress.current} séance(s) restante(s)
                   </p>
                 </div>
-                <div className="h-[1.2vh] overflow-hidden rounded-full bg-violet-200/70 shadow-inner">
-                  <div
-                    className="h-full bg-gradient-to-r from-violet-500 via-purple-600 to-fuchsia-600 transition-all duration-300 ease-out"
-                    style={{ width: `${(replacementProgress.current / replacementProgress.total) * 100}%` }}
-                  />
-                </div>
-                <p className="mt-[1vh] text-center text-[clamp(0.75rem,0.95vw,0.82rem)] text-violet-700">
-                  {Math.round((replacementProgress.current / replacementProgress.total) * 100)}% - {replacementProgress.total - replacementProgress.current} séance(s) restante(s)
-                </p>
               </div>
             )}
           </div>
